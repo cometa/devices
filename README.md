@@ -11,28 +11,28 @@ A device that "subscribe" to a registered Cometa application allows the associat
 This repository contains the Cometa client libraries and examples for a number of different devices and OS targets. The client library makes it easy for an application to use the Cometa API.
 
 *Note: the Cometa server and hosted API service is currently in private beta.*
-#Synopsis
-<hr>
+Synopsis
+--------
 Build the libcometa library and examples first. On a linux system, build a client program with the compile flags provided by `pkg-config --cflags libcometa`
 and build flags based on the output of `pkg-config --libs libcometa`.
 
-`#include <cometa.h>
+	#include <cometa.h>
 
-/* todo: add simple client code */
-
-do {
+	/* todo: add simple client code */
 	
-} while(1);`
+	do {
+	
+	} while(1);
 
 More detailed examples are provided for several target devices and OS.
 
-#Installation
-<hr>
+Installation
+--------
 To build the library use the command:
 `make`
 
 On linux hosted environments proceed with:
 `make install`
-#API Documentation
-<hr>
+API Documentation
+--------
 *TODO*
