@@ -29,10 +29,13 @@ More detailed examples are provided for several target devices and OS.
 Installation
 --------
 To build the library use the command:
-`make`
+
+	make
 
 On linux hosted environments proceed with:
-`make install`
+
+	make install
+
 API Documentation
 --------
 *TODO*
