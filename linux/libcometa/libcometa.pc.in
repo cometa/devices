@@ -1,0 +1,11 @@
+libdir=@LIBDIR@
+includedir=@INCDIR@
+
+Name: cometa
+Description: Cometa Cloud Infrastructure Library
+Version: 0.1
+#Requires: libcrypto
+Requires:
+Conflicts:
+Libs: -L${libdir} -lcometa
+Cflags: -I${includedir}
