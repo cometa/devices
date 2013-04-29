@@ -18,14 +18,28 @@
  */
 
 /* @file
- * Cometa client library for vanilla linux systems.
+ * Cometa client library main code for vanilla linux systems.
  *
  */
 
+#include <sys/types.h>
+#include <sys/stat.h>
+#include <sys/socket.h>
+#include <sys/time.h>
+
+#include <netinet/in.h>
+#include <netdb.h>
+#include <stdio.h>
 #include <string.h>
-#include "http_server.h"
-#include "wwd_assert.h"
-#include "wiced.h"
+#include <stdlib.h>
+#include <unistd.h>
+#include <errno.h>
+#include <arpa/inet.h> 
+#include <signal.h> 
+#include <unistd.h>
+#include <err.h>
+#include <time.h>
+#include <pthread.h>
 
 /******************************************************
  *                      Macros
