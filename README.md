@@ -34,7 +34,7 @@ To build the library use the command:
 
 On linux hosted environments proceed with:
 
-	make install
+	sudo make install
 
 API Documentation
 --------
