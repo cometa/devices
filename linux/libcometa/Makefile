@@ -5,8 +5,8 @@ LIBDIR=$(PREFIX)/lib
 # Compile using `make XCFLAGS=-DDEBUG=1` to enable debugging code.
 CUSTOM_CFLAGS=-Wall -ggdb3 -O3
 
-#SOFLAGS=-fPIC -fvisibility=internal
-SOFLAGS=
+SOFLAGS=-fPIC -fvisibility=internal
+#SOFLAGS=
 
 #SYS_CFLAGS=-std=gnu99 $(SOFLAGS) -I. `pkg-config --cflags libcrypto`
 SYS_CFLAGS=-std=gnu99 $(SOFLAGS) -I. -pthread -DDEBUG=1
