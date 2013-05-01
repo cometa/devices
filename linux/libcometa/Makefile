@@ -32,17 +32,11 @@ clean:
 	rm -f *.o libcometa.so.0.1 libcometa.pc
 
 install:
-#	$(INSTALL) -D -m 0644 cometa.h $(DESTDIR)$(INCDIR)/cometa.h
-#	$(INSTALL) -D -m 0755 libcometa.so.0.1 $(DESTDIR)$(LIBDIR)/libcometa.so.0.1
-#	ln -s -f libcometa.so.0.1 $(DESTDIR)$(LIBDIR)/libcometa.so.0
-#	ln -s -f libcometa.so.0.1 $(DESTDIR)$(LIBDIR)/libcometa.so
-#	$(INSTALL) -D -m 0644 libcometa.pc $(DESTDIR)$(LIBDIR)/pkgconfig/libcometa.pc
-#	ldconfig
-
-	$(INSTALL)  -m 0644 cometa.h $(DESTDIR)$(INCDIR)/cometa.h
-	$(INSTALL)  -m 0755 libcometa.so.0.1 $(DESTDIR)$(LIBDIR)/libcometa.so.0.1
+	$(INSTALL) -D -m 0644 cometa.h $(DESTDIR)$(INCDIR)/cometa.h
+	$(INSTALL) -D -m 0755 libcometa.so.0.1 $(DESTDIR)$(LIBDIR)/libcometa.so.0.1
 	ln -s -f libcometa.so.0.1 $(DESTDIR)$(LIBDIR)/libcometa.so.0
 	ln -s -f libcometa.so.0.1 $(DESTDIR)$(LIBDIR)/libcometa.so
-	$(INSTALL)  -m 0644 libcometa.pc $(DESTDIR)$(LIBDIR)/pkgconfig/libcometa.pc	
+	$(INSTALL) -D -m 0644 libcometa.pc $(DESTDIR)$(LIBDIR)/pkgconfig/libcometa.pc
+	ldconfig	
 
 -include ../Makefile.lib
