@@ -7,7 +7,7 @@ OBJS=cometa-client.o
 all: cometa-client
 
 cometa-client: cometa-client.o
-	$(call cmd,link)
+	$(CC) $(LDFLAGS) -o $@ $^ $(LIBS)
 
 clean:
 	rm -f *.o cometa-client
