@@ -1,0 +1,5 @@
+.deps
+*.so
+*.so.*
+*.dylib
+*.o

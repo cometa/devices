@@ -1,0 +1,6 @@
+*.o
+*.pc
+*.pc.in
+.deps
+*.so
+*.so.*
