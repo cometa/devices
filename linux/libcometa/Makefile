@@ -6,7 +6,7 @@ LIBDIR=$(PREFIX)/lib
 # Compile using `make XCFLAGS=-DDEBUG=1` to enable debugging code.
 CUSTOM_CFLAGS=-Wall -ggdb3 -O3
 
-SOFLAGS=-fPIC -fvisibility=internal
+SOFLAGS=-fPIC 
 #SOFLAGS=
 
 # compile with DEBUG=1 to enable debug code 
