@@ -46,9 +46,9 @@
  * APP_ENDPOINT - authentication endpoint for devices
  *
  */
-#define APP_SERVERNAME "54.241.16.55"
-#define APP_SERVERPORT  "7017"
-#define APP_ENDPOINT "/authenticate"
+#define APP_SERVERNAME "YOUR_APP_SERVERNAME"
+#define APP_SERVERPORT  "YOUR_APP_SERVERPORT"
+#define APP_ENDPOINT "YOUR_APP_ENDPOINT"
 
 /*
  * Cometa credentials. (for the server application)
@@ -56,8 +56,8 @@
  * COMETA_APP_NAME - cometa registered application name 
  * COMETA_APP_KEY -  cometa registered application key
  */
-#define COMETA_APP_NAME "cometatest"
-#define COMETA_APP_KEY "946604ed1d981eca2879"
+#define COMETA_APP_NAME "YOUR_COMETA_APP_NAME"
+#define COMETA_APP_KEY "YOUR_COMETA_APP_KEY"
 
 /*
  * Device credentials.
@@ -65,8 +65,8 @@
  * DEVICE_ID - the ID of this device to use in Cometa
  * DEVICE_KEY - the key of this device for authenticating with the server application
  */
-#define DEVICE_ID "700"
-#define DEVICE_KEY  "000000"
+#define DEVICE_ID "YOUR_DEVICE_ID"
+#define DEVICE_KEY  "YOUR_DEVICE_KEY"
 
 /* 
  * The server application will be called by the cometa server for authenticating this device at:
