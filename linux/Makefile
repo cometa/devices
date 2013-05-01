@@ -1,5 +1,4 @@
-# Compile using `make XCFLAGS=-DDEBUG` to enable debugging code.
-
+CC=gcc
 PREFIX=/usr/local
 LIBDIR=$(PREFIX)/lib
 INCDIR=$(PREFIX)/include
