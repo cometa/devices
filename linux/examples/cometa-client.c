@@ -155,8 +155,17 @@ main(int argc, char *argv[]) {
 	
 	/* The main() thread is done, this device is subscribed to cometa and is ready to receive
 	 * messages handled by the callback. Normally here is where this application's main loop would start.
-     * Otherwise, we need to call pthread_exit explicitly to allow the working threads in
+     * Otherwise, we need to call pthread_exit() explicitly to allow the working threads in
 	 * the cometa library to continue and for the callback to be executed even after main completes.
 	 */
 	pthread_exit(NULL);
+	
+	/*
+	 * alternative to pthread_exit():
+	 *
+		do {
+			sleep(5);
+		} while(1);
+	 *
+	 */
 }
