@@ -138,9 +138,18 @@ recv_loop(void *h) {
         /* received a command */
         debug_print("DEBUG: received from server:\r\n%s", handle->recvBuff);
 
+		/* the message is an HTTP data-chunk with the first line containing the message length in hex */
+		/* skip the first line containing the length of the data chunk */
+        n = 0;
+        while (handle->recvBuff[n] != 10 && handle->recvBuff[n] != 13)
+        	 n++;
+        do {
+			n++;
+		} while (handle->recvBuff[n] == 10 || handle->recvBuff[n] == 13);
+
 		/* invoke the user callback */
 		if (handle->user_cb) {
-			response = handle->user_cb(strlen(handle->recvBuff), handle->recvBuff);
+			response = handle->user_cb((handle->recvBuff) + n);
 			sprintf(handle->sendBuff, "%x\r\n%s\r\n", (int)strlen(response) + 2, response);
 		    debug_print("DEBUG: sending response:\r\n%s", handle->sendBuff);
 		} else {

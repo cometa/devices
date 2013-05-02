@@ -67,7 +67,7 @@ typedef enum  {
  *
  * @return - the response message to be sent to the application server
  */
-typedef char *(*cometa_message_cb)(int data_size, void *data);
+typedef char *(*cometa_message_cb)(void *data);
 
 /** Cometa API functions **/
 
@@ -109,6 +109,7 @@ struct cometa *cometa_subscribe(const char *app_name, const char *app_key, const
 
 /*
  * Bind the @cb callback to a message received event from the connection with the specified @handle.
+ * The message received by the callback is zero-terminated.
  *
  */
 
