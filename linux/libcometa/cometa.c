@@ -439,8 +439,13 @@ cometa_subscribe(const char *app_name, const char *app_key, const char *app_serv
         fprintf(stderr, "ERROR: Read error from application server socket.\r\n");
     }
     debug_print("DEBUG: received from app server (%zd):\r\n%s\n", strlen(conn->recvBuff), conn->recvBuff);
-
+	/*  
+	 *  {"response":200,"signature":"946604ed1d981eca2879:babc3d687335043f55878b3f1eef94815327d6ad533e7c7f51fb30b8ca4683a1"}
+	 */
+	
     close(conn->app_sockfd);
+
+	/* TODO: check for response 403 Forbidden device */
     
     data_p = strlen(conn->recvBuff);
      /* extract signature from last line received in buffer */
