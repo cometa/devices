@@ -85,27 +85,33 @@ char dateBuf[80];
 /*
  * Callback for messages received from the server application (via cometa).
  *
- * @data - message buffer (zero-terminated)
+ * @data_len - length message buffer 
+ * @data - message buffer 
  * 
  * The buffer is reused by the cometa client library. Copy the buffer if needed after returning.
  *
  */
 static char *
-message_handler(void *data) {
+message_handler(const int data_len, void *data) {
 	time_t now;
-    struct tm  ts;
+    	struct tm  ts;
 
 	/* save the buffer */
 	strcpy(rcvBuf, data);
 	
 	/* time */
 	time(&now);
-    /* Format time, "ddd yyyy-mm-dd hh:mm:ss zzz" */
-    ts = *localtime(&now);
-    strftime(dateBuf, sizeof(dateBuf), "%Y-%m-%d %H:%M:%S", &ts);
+    	/* Format time, "ddd yyyy-mm-dd hh:mm:ss zzz" */
+    	ts = *localtime(&now);
+    	strftime(dateBuf, sizeof(dateBuf), "%Y-%m-%d %H:%M:%S", &ts);
+
+	/*
+	 * Note: if the message may contain binary data do not print 
+	 */
 
 	/* zero-terminate the buffer for printing */
-	printf("%s: in message_handler.\r\nReceived %d bytes:\r\n%s", dateBuf, strlen((char *)rcvBuf), (char *)rcvBuf);
+	rcvBuf[data_len] = '\0';
+	printf("%s: in message_handler.\r\nReceived %d bytes:\r\n%s", dateBuf, data_len, (char *)rcvBuf);
 	
 	/*
 	 * Here is where the received message is interpreted and proper action taken.

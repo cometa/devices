@@ -63,7 +63,7 @@
 struct cometa {
 	int	sockfd;						/* socket to Cometa server */
 	char recvBuff[MESSAGE_LEN];		/* received buffer */
-    char sendBuff[MESSAGE_LEN];		/* send buffer */
+        char sendBuff[MESSAGE_LEN];		/* send buffer */
 	int	app_sockfd;					/* socket to the application server */
 	char *app_name;					/* application name */
 	char *app_key;					/* application key */
@@ -123,7 +123,7 @@ static void *
 recv_loop(void *h) {
 	char *response;
 	struct cometa *handle;
-	int n;
+	int n, p;
 	
 	handle = (struct cometa *)h;
     /* 
@@ -140,16 +140,16 @@ recv_loop(void *h) {
 
 		/* the message is an HTTP data-chunk with the first line containing the message length in hex */
 		/* skip the first line containing the length of the data chunk */
-        n = 0;
-        while (handle->recvBuff[n] != 10 && handle->recvBuff[n] != 13)
-        	 n++;
+        p = 0;
+        while (handle->recvBuff[p] != 10 && handle->recvBuff[p] != 13)
+        	 p++;
         do {
-			n++;
-		} while (handle->recvBuff[n] == 10 || handle->recvBuff[n] == 13);
+		p++;
+	} while (handle->recvBuff[p] == 10 || handle->recvBuff[p] == 13);
 
 		/* invoke the user callback */
 		if (handle->user_cb) {
-			response = handle->user_cb((handle->recvBuff) + n);
+			response = handle->user_cb((n - p), (handle->recvBuff) + p);
 			sprintf(handle->sendBuff, "%x\r\n%s\r\n", (int)strlen(response) + 2, response);
 		    debug_print("DEBUG: sending response:\r\n%s", handle->sendBuff);
 		} else {

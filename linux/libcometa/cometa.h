@@ -61,13 +61,12 @@ typedef enum  {
  * to Cometa and relayed to the application server. If there is no message to send back
  * the callback returns NULL. The response message memory is not released by the library.
  *
- * @param	reply - the result code
  * @param	data_size - size of the message
  * @param	data - message
  *
  * @return - the response message to be sent to the application server
  */
-typedef char *(*cometa_message_cb)(void *data);
+typedef char *(*cometa_message_cb)(const int data_size, void *data);
 
 /** Cometa API functions **/
 
