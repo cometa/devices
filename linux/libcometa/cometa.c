@@ -317,9 +317,9 @@ cometa_subscribe(const char *app_name, const char *app_key, const char *app_serv
      *
      */
     if (device.info)
-    	sprintf(conn->sendBuff, "GET /subscribe?app_name=cometatest&device_id=%s&platform=%s HTTP/1.1\r\nHost: api.cometa.io\r\n\r\n\r\n", device.id, device.info);
+    	sprintf(conn->sendBuff, "GET /subscribe?app_name=%s&device_id=%s&platform=%s HTTP/1.1\r\nHost: api.cometa.io\r\n\r\n\r\n", app_name, device.id, device.info);
 	else
-		sprintf(conn->sendBuff, "GET /subscribe?app_name=cometatest&device_id=%s HTTP/1.1\r\nHost: api.cometa.io\r\n\r\n\r\n", device.id);
+		sprintf(conn->sendBuff, "GET /subscribe?app_name=%s&device_id=%s HTTP/1.1\r\nHost: api.cometa.io\r\n\r\n\r\n", app_name, device.id);
     debug_print("DEBUG: sending URL:\r\n%s", conn->sendBuff);
     
     n = write(conn->sockfd, conn->sendBuff, strlen(conn->sendBuff));
