@@ -68,6 +68,15 @@
 #define DEVICE_ID "YOUR_DEVICE_ID"
 #define DEVICE_KEY  "YOUR_DEVICE_KEY"
 
+/*
+ * Device credentials.
+ *
+ * DEVICE_ID - the ID of this device to use in Cometa
+ * DEVICE_KEY - the key of this device for authenticating with the server application
+ */
+#define DEVICE_ID "700"
+#define DEVICE_KEY  "000000"
+
 /* 
  * The server application will be called by the cometa server for authenticating this device at:
  * http://[APP_SERVERNAME:APP_SERVERNAME]/[APP_ENDPOINT]?device_id=[DEVICE_ID]&device_key=[DEVICE_KEY]&app_key=[COMETA_APP_KEY]&challenge=[from_cometa]
@@ -78,6 +87,7 @@
 
 char rcvBuf[MESSAGE_LEN];
 char sendBuf[128];
+char dateBuf[80];
 
 /** function definitions **/
 
@@ -92,20 +102,29 @@ char sendBuf[128];
  */
 static char *
 message_handler(int data_size, void *data) {
+	time_t now;
+    struct tm  ts;
+
+
 	/* save the buffer */
 	memcpy(rcvBuf, data, data_size);
 	
+	/* time */
+	time(&now);
+    /* Format time, "ddd yyyy-mm-dd hh:mm:ss zzz" */
+    ts = *localtime(&now);
+    strftime(dateBuf, sizeof(dateBuf), "%a %Y-%m-%d %H:%M:%S %Z", &ts);
+
 	/* zero-terminate the buffer for printing */
 	rcvBuf[data_size] = '\0';
-	printf("DEBUG: in message_handler. Received: \r\n%s\r\n", (char *)rcvBuf);
+	printf("%s: in message_handler. Received: \r\n%s\r\n", dateBuf, (char *)rcvBuf);
 	
 	/*
 	 * Here is where the received message is interpreted and proper action taken.
 	 */
 	
-	/* send a bogus reply that should be replaced by the proper reply */
+	/* send a bogus response to the application server */
 	sprintf(sendBuf, "%s", REPLY);
-    printf("DEBUG: sending response:\n%s", sendBuf);
 
 	return sendBuf;
 }
@@ -138,6 +157,7 @@ main(int argc, char *argv[]) {
 		fprintf(stderr, "DEBUG: Error in cometa_bind_cb: %d. Exiting.\r\n", ret);
 		exit(-1);
 	}
+	printf("%s: connection completed for device ID: %s\r\n", argv[0], DEVICE_ID);
 	
 	/* The main() thread is done, this device is subscribed to cometa and is ready to receive
 	 * messages handled by the callback. Normally here is where this application's main loop would start.

@@ -10,7 +10,7 @@ SOFLAGS=-fPIC
 #SOFLAGS=
 
 # compile with DEBUG=1 to enable debug code 
-SYS_CFLAGS=-std=gnu99 $(SOFLAGS) -I. -pthread -DDEBUG=1
+SYS_CFLAGS=-std=gnu99 $(SOFLAGS) -I. -pthread -DDEBUG=0
 
 #LIBS=`pkg-config --libs libcrypto`
 LIBS=
