@@ -95,6 +95,7 @@ struct {
 static void *
 send_heartbeat(void *h) {
 	struct cometa *handle;
+	int n;
 	
 	handle = (struct cometa *)h;
 	usleep(handle->hz * 1000000);
