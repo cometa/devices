@@ -68,15 +68,6 @@
 #define DEVICE_ID "YOUR_DEVICE_ID"
 #define DEVICE_KEY  "YOUR_DEVICE_KEY"
 
-/*
- * Device credentials.
- *
- * DEVICE_ID - the ID of this device to use in Cometa
- * DEVICE_KEY - the key of this device for authenticating with the server application
- */
-#define DEVICE_ID "700"
-#define DEVICE_KEY  "000000"
-
 /* 
  * The server application will be called by the cometa server for authenticating this device at:
  * http://[APP_SERVERNAME:APP_SERVERNAME]/[APP_ENDPOINT]?device_id=[DEVICE_ID]&device_key=[DEVICE_KEY]&app_key=[COMETA_APP_KEY]&challenge=[from_cometa]
@@ -113,11 +104,11 @@ message_handler(int data_size, void *data) {
 	time(&now);
     /* Format time, "ddd yyyy-mm-dd hh:mm:ss zzz" */
     ts = *localtime(&now);
-    strftime(dateBuf, sizeof(dateBuf), "%a %Y-%m-%d %H:%M:%S %Z", &ts);
+    strftime(dateBuf, sizeof(dateBuf), "%Y-%m-%d %H:%M:%S", &ts);
 
 	/* zero-terminate the buffer for printing */
 	rcvBuf[data_size] = '\0';
-	printf("%s: in message_handler. Received: \r\n%s\r\n", dateBuf, (char *)rcvBuf);
+	printf("%s: in message_handler.\r\nReceived: \r\n%s\r\n", dateBuf, (char *)rcvBuf);
 	
 	/*
 	 * Here is where the received message is interpreted and proper action taken.
