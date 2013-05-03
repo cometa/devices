@@ -263,10 +263,10 @@ cometa_subscribe(const char *app_name, const char *app_key, const char *app_serv
 	memset(&hints, 0, sizeof hints); // make sure the struct is empty
 	hints.ai_family = AF_INET;     // don't care IPv4 or IPv6
 	hints.ai_socktype = SOCK_STREAM; // TCP stream sockets
-	hints.ai_flags = AI_NUMERICSERV;     // fill in IP list
+	hints.ai_flags = AI_CANONNAME | AI_ADDRCONFIG;     // fill in IP list
 
 	if ((n = getaddrinfo(SERVERNAME, SERVERPORT, &hints, &result)) != 0) {
-		fprintf(stderr, "ERROR : Could not get server name resolved (%s). Is the Cometa server running?\r\n", gai_strerror(n));
+		fprintf(stderr, "ERROR : Could not get server name %s resolved (%s). Is the Cometa server running?\r\n", SERVERNAME, gai_strerror(n));
 		conn->reply = COMETAR_ERROR;
 	    return NULL;
 	}	
@@ -281,7 +281,7 @@ cometa_subscribe(const char *app_name, const char *app_key, const char *app_serv
 	    close(conn->sockfd);
 	}
 	if (rp == NULL) {               /* No address succeeded */
-		fprintf(stderr, "ERROR : Could not get server name resolved (%s). Is the Cometa server running?\r\n", gai_strerror(n));
+		fprintf(stderr, "ERROR : Could not get server name %s resolved (%s). Is the Cometa server running?\r\n", SERVERNAME, gai_strerror(n));
 		conn->reply = COMETAR_ERROR;
 	  	return NULL;
 	}
@@ -371,10 +371,10 @@ cometa_subscribe(const char *app_name, const char *app_key, const char *app_serv
 	memset(&hints, 0, sizeof hints); // make sure the struct is empty
 	hints.ai_family = AF_INET;     // don't care IPv4 or IPv6
 	hints.ai_socktype = SOCK_STREAM; // TCP stream sockets
-	hints.ai_flags = AI_NUMERICSERV;     // fill in IP list
+	hints.ai_flags = AI_CANONNAME | AI_ADDRCONFIG;     // fill in IP list
 
 	if ((n = getaddrinfo(app_server_name, app_server_port, &hints, &result)) != 0) {
-		fprintf(stderr, "ERROR : Could not get server name resolved. step 1 (%s)\n", gai_strerror(n));
+		fprintf(stderr, "ERROR : Could not get server name %s resolved. step 1 (%s)\n", app_server_name, gai_strerror(n));
 		conn->reply = COMETAR_ERROR;
 	    return NULL;
 	}	
@@ -390,7 +390,7 @@ cometa_subscribe(const char *app_name, const char *app_key, const char *app_serv
 	    close(conn->app_sockfd);
 	}
 	if (rp == NULL) {               /* No address succeeded */
-		fprintf(stderr, "ERROR : Could not get application server name resolved. (%s)\n", gai_strerror(n));
+		fprintf(stderr, "ERROR : Could not get server name %s resolved. step 1 (%s)\n", app_server_name, gai_strerror(n));
 		conn->reply = COMETAR_ERROR;
 	  	return NULL;
 	}
