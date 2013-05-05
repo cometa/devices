@@ -118,6 +118,8 @@ Parameters:
 
 The POST body contains the message. The message can be any type, including binary, providing that is not larger than 64 KB.
 
+The authorization signature is a HMAC SHA256 hex digest of the URI.
+
 Successful response:
 
 A device may respond with a reply message that is returned back in the "reply" attribute of the response hash.
