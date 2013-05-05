@@ -65,7 +65,7 @@ The REST API is the way devices and application servers interact with the Cometa
 
 The Cometa API is hosted at api.cometa.io and must be accessed via HTTP or HTTPS. Parameters are provided in the query string, with exception of the message in the publish POST method, that is in the POST body instead.
 
-###Response
+####Response
 
 A response to a API request is a hash containing at least the response code. If the response code is `"response": "200"`, other attributes may be returned in the response hash.
 
@@ -106,7 +106,7 @@ The following diagrams illustrates the device authentication process:
 ###Publish
 
 	POST /publish?<device_id>&<app_name>&<app_key>&<auth_signature>
-	
+
 Send a message to the <device\_id> subscribed to <app\_name>.
 
 Parameters:
@@ -128,5 +128,35 @@ A device may respond with a reply message that is returned back in the "reply" a
 		"status": "200",
 		"device" : "40:6c:8f:08:7d:5c",
 		"reply" : "{ "temperature" : "75.3","humidity":"35.7"}"
+	}
+
+###Info
+
+	GET /info?<app_key>[&<app\_name>][&<device_id>]&<auth_signature>
+
+Obtain statistics on devices subscribed to an application and on specific devices.
+
+Parameters:
+
+* app\_key - the application key
+* device\_id - (optional) the unique device ID (max 32 characters)
+* app\_name - (optional) the application name registered with Cometa
+* auth\_signature - the authorization signature
+
+Successful response:
+
+	{
+	    "status": "200", 
+	    "device": "40:6c:8f:08:7d:5c", 
+	    "ip_address": "54.241.16.45", 
+	    "heartbeat": "1367769699", 
+	    "info": "linux_client", 
+	    "stats": {
+	        "connected_at": "1367596124", 
+	        "messages": "4007", 
+	        "bytes_up": "5003423", 
+	        "bytes_down": "20023", 
+	        "latency": "32"
+	    }
 	}
 
