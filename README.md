@@ -6,7 +6,7 @@ Cometa
 
 Cometa is an edge server that maintains long-lived, bi-directional HTTP(S) connections to remote devices with a simple publish-subscribe interaction pattern. It offers a hosted API at api.cometa.io that is used by both the software in a device and in the application server that intends to communicate with the device.
 
-A device that "subscribe" to a registered Cometa application allows the associated application server to securely send messages "published" to the device's unique ID communication channel. A message received by the device results in a action by the device and in a response message, that is sent back to the Cometa server and relayed to the application server in a synchronous operation. This way Cometa delivers low-latency, one-to-one messages between your application server and enabled devices regardless of NAT and firewalls.
+A device that "subscribes" to a registered Cometa application allows the associated application server to securely send messages "published" to the device's unique ID communication channel. A message received by the device results in a action by the device and in a response message, that is sent back to the Cometa server and relayed to the application server in a synchronous HTTP operation. This way Cometa delivers low-latency, one-to-one messages between your application server and enabled devices regardless of NAT and firewalls.
 
 This repository contains the Cometa device client and server libraries, and examples for a number of different embedded systems OS targets. Very little code is needed in the device, and the provided client library makes it easy for an embedded application to use the Cometa API.
 
@@ -99,7 +99,7 @@ The following diagrams illustrates the device authentication process:
 
 1. after sending the initial `GET /subscribe` request to the Cometa Server, the device receives a challenge in the response, typically a sequence identifying the connection. The HTTP connection remains open.
 
-2. the device sends the challenge together with the other parameters to the authentication endpoint of the application server. The application server has an opportunity to authenticate the device at this step, for instance checking the DEVICE\_KEY and DEVICE\ID against a database. If the device is authenticated by the application server, an authorization string is calculated by signing the challenge using the APP\_SECRET.
+2. the device sends the challenge together with the other parameters to the authentication endpoint of the application server. The application server has an opportunity to authenticate the device at this step, for instance checking the DEVICE\_KEY and DEVICE\_ID against a database. If the device is authenticated by the application server, an authorization string is calculated by signing the challenge using the APP\_SECRET.
 
 3. the APP\_KEY and the authorization string returned by the application server are sent to the Cometa Server as "chunked-data", using the HTTP connection established in step 1, which completes the authentication process if signature was calculated correctly.
 
@@ -107,7 +107,7 @@ The following diagrams illustrates the device authentication process:
 
 	POST /publish?<device_id>&<app_name>&<app_key>&<auth_signature>
 
-Send a message to the <device\_id> subscribed to <app\_name>.
+Send a message to the `<device\_id>` subscribed to `<app\_name>`.
 
 Parameters:
 
