@@ -1,25 +1,12 @@
 /*
- * Cometa is a cloud infrastructure for embedded systems and connected 
- * devices developed by Visible Energy, Inc.
+ * @file    cometa.c
+ *
+ * @brief   Library main code to connect a linux device to the cometa infrastructure.
+ *
+ * Cometa is a cloud infrastructure for embedded systems and connected devices.
  *
  * Copyright (C) 2013, Visible Energy, Inc.
  * 
- * Licensed under the Apache License, Version 2.0 (the "License");
- *  you may not use this file except in compliance with the License.
- *  You may obtain a copy of the License at
- *
- * http://www.apache.org/licenses/LICENSE-2.0
- *
- * Unless required by applicable law or agreed to in writing, software
- * distributed under the License is distributed on an "AS IS" BASIS,
- * WITHOUT WARRANTIES OR CONDITIONS OF ANY KIND, either express or implied.
- * See the License for the specific language governing permissions and
- * limitations under the License.
- */
-
-/* @file
- * Cometa client library main code for vanilla linux systems.
- *
  */
 
 #include <sys/types.h>
@@ -40,14 +27,15 @@
 #include <err.h>
 #include <time.h>
 #include <pthread.h>
+#include <sys/queue.h>
 
 #include "cometa.h"
 
 /** Public structures and constants **/
 
-/* Cometa server FQ name and port */
+/* Cometa server FQ names and port */
 #define SERVERPORT  "7007"
-#define SERVERNAME "api.cometa.io"
+#define SERVERNAME "ensemble.cometa.io"
 
 /* special one byte chunk-data line from devices */
 #define MSG_HEARTBEAT 0x06
@@ -63,7 +51,7 @@
 struct cometa {
 	int	sockfd;						/* socket to Cometa server */
 	char recvBuff[MESSAGE_LEN];		/* received buffer */
-        char sendBuff[MESSAGE_LEN];		/* send buffer */
+    char sendBuff[MESSAGE_LEN];		/* send buffer */
 	int	app_sockfd;					/* socket to the application server */
 	char *app_name;					/* application name */
 	char *app_key;					/* application key */
@@ -78,6 +66,21 @@ struct cometa {
 	cometa_reply reply;				/* last reply code */
 };
 
+/*
+ * Structure used during the connection process to track connections to all
+ * the Cometa servers in the ensable.
+ */
+struct ensemble {
+    struct addrinfo *ap;
+    long    delay;      /* connection delay */
+    int     sockfd;     /* socket used for this server */
+    pthread_t tid;      /* thread id */
+    TAILQ_ENTRY(ensemble) next;
+};
+
+/* ensamble servers list */
+TAILQ_HEAD(,ensemble) servers;
+
 /** Library global variables **/
 
 /* global variable holding the device's identity and credentials */
@@ -87,21 +90,28 @@ struct {
 	char *info;		/* device platform information */
 } device;
 
+/* last used connection */
+struct cometa *conn_save = NULL;
+
 /** Functions definitions **/
 
 /*
  * The heartbeat thread.
+ *
+ * This thread detects a server disconnection and attempts to reconnect to a server in the Cometa ensemble.
+ *
  */
 static void *
 send_heartbeat(void *h) {
-	struct cometa *handle;
-	int n;
+	struct cometa *handle, *ret_sub;
+    int ret;
+    ssize_t n;
 	
 	handle = (struct cometa *)h;
 	usleep(handle->hz * 1000000);
 	do {
-		if (pthread_rwlock_rdlock(&(handle->hlock)) != 0) {
-	        fprintf(stderr, "ERROR: in send_heartbeat. Failed to get wrlock. Exiting.\r\n");
+		if ((ret = pthread_rwlock_rdlock(&handle->hlock)) != 0) {
+	        fprintf(stderr, "ERROR: in send_heartbeat. Failed to get wrlock. ret = %d. Exiting.\r\n", ret);
 	        exit (-1);
 	    }
 		debug_print("DEBUG: sending heartbeat.\r\n");
@@ -109,6 +119,17 @@ send_heartbeat(void *h) {
 		sprintf(handle->sendBuff, "2\n%c\n", MSG_HEARTBEAT);    // "2\n\x06\n"	
 		n = write(handle->sockfd, handle->sendBuff, strlen(handle->sendBuff));
 	    pthread_rwlock_unlock(&(handle->hlock));
+        /* check for SIGPIPE broken pipe */
+        if ((n < 0) && (errno == EPIPE)) {
+            /* connection lost */
+            debug_print("in send_heartbeat: n = %d, errno = %d\n", n, (int)errno);
+            /* attempt to reconnect */
+            /* TODO: add a random delay to avoid server flooding when many devices disconnect at the same time */
+            ret_sub = cometa_subscribe(conn_save->app_name, conn_save->app_key, conn_save->app_server_name, conn_save->app_server_port, conn_save->auth_endpoint);
+            if (ret_sub == NULL) {
+                debug_print("ERROR: attempt to reconnect to the server failed.\n");
+            }
+        }
 		
 		while (usleep(handle->hz * 1000000) == -1 && (errno == EINTR))
 			/* interrupted by a SIGNAL */
@@ -129,7 +150,37 @@ recv_loop(void *h) {
     /* 
 	 * start a forever loop reverting the connection and receiving requests from the server 
 	 */
-    while ((n = read(handle->sockfd, handle->recvBuff, sizeof(handle->recvBuff)-1)) > 0) {
+    while (1) {
+        n = read(handle->sockfd, handle->recvBuff, sizeof(handle->recvBuff) - 1);
+        if ((MESSAGE_LEN - 1) < n) {
+            fprintf(stderr, "ERROR: in message receive loop. Message too large. nbytes: %d, errno: %d.\r\n", n, errno);
+            continue;
+            /* Receiving a large  message works well up to 2 times MESSAGE LEN because sendBuff 
+             * is allocated after the recvBuff. 
+             * TODO: handle a message larger than 2 x MESSAGE_LEN by reading the first line
+             * containing the lenght of the body (in hex).
+             */
+        }
+        /* on STREAMS-based systems read() from a socket returns 0 when the connection is closed */
+        if (n == 0) {
+            debug_print("DEBUG: in message receive loop. Socket read: %d errno: %d.\r\n", n, errno);       
+            /* Nothing to recover really. The next heartbeat will attempt a new connection. */
+            /* Let the heartbeat thread to attempt a reconnection when the server has closed the socket (keep-alive) */
+            sleep(1);
+            continue;            
+        }
+        /* check if the connection has been terminated by the server with a SIGPIPE */
+        if (n == -1 && errno == EINTR) {
+            debug_print("DEBUG: in message receive loop. Socket read: %d errno: %d.\r\n", n, errno);       
+            /* Nothing to recover really. The next heartbeat will attempt a new connection. */
+            sleep(1);
+            continue;
+        }
+        if (n < 0) {
+            fprintf(stderr, "ERROR: in message receive loop. Socket read error. nbytes: %d, errno: %d.\r\n", n, errno);
+            sleep(1);
+            continue;
+        }
         if (pthread_rwlock_rdlock(&(handle->hlock)) != 0) {
             fprintf(stderr, "ERROR: in message receive loop. Failed to get wrlock. Exiting.\r\n");
             exit (-1);
@@ -144,9 +195,9 @@ recv_loop(void *h) {
         while (handle->recvBuff[p] != 10 && handle->recvBuff[p] != 13)
         	 p++;
         do {
-		p++;
-	} while (handle->recvBuff[p] == 10 || handle->recvBuff[p] == 13);
-
+		    p++;
+	    } while (handle->recvBuff[p] == 10 || handle->recvBuff[p] == 13); // TODO: check for p > n
+        
 		/* invoke the user callback */
 		if (handle->user_cb) {
 			response = handle->user_cb((n - p), (handle->recvBuff) + p);
@@ -156,29 +207,149 @@ recv_loop(void *h) {
 			sprintf(handle->sendBuff, "%x\r\n\r\n", 2);
 			debug_print("DEBUG: sending empty response.\r\n");
 		}
-		
         /* send the response back */
         n = write(handle->sockfd, handle->sendBuff, strlen(handle->sendBuff));
         pthread_rwlock_unlock(&(handle->hlock));
-
-        if (n < 0)  {
-            fprintf(stderr, "ERROR: in message receive loop. Failed to write to socket. Exiting.\r\n");
-			exit(-1);
-        }
     }
 	return NULL;
 }	/* recv_loop */
 
 /*
+ * Thread to connect to a server of the Cometa ensemble.
+ *
+ * @params  ptr - a pointer to a struct ensemble
+ *
+ * @result is NULL.
+ *
+ */
+static
+void *server_connect(void *ptr) {
+    struct ensemble *sp = (struct ensemble *)ptr;
+    struct addrinfo *rp = sp->ap;
+    struct timeval  start;  /* connection start time */
+    struct timeval  end;    /* connection end time */
+    struct timeval delay;
+    
+    sp->delay = 0;
+    /* open a socket */
+    sp->sockfd = socket(rp->ai_family, rp->ai_socktype, rp->ai_protocol);
+    if (sp->sockfd == -1)
+        return NULL;
+    /* get start time */
+    gettimeofday(&start, NULL);        
+    /* connect to the server */
+    if (connect(sp->sockfd, rp->ai_addr, rp->ai_addrlen) == -1) {
+        sp->sockfd = -1;
+        return NULL;
+    }
+    /* get end time */
+    gettimeofday(&end, NULL);
+    /* subtract the time */
+    timersub(&end, &start, &delay);
+    /* save the delay in microseconds */
+    sp->delay = delay.tv_sec * 1000000 + delay.tv_usec;
+    /* close the socket */
+    close(sp->sockfd);
+    return NULL;
+}   /* server_connect */
+
+/*
+ * Connect to the server of the Cometa ensemble with the shortest connection delay.
+ *
+ * @result the connection socket or -1.
+ *
+ */
+static
+int ensemble_connect(void) {
+    struct addrinfo hints;
+	struct addrinfo *result, *rp;
+    struct ensemble *sp;
+    struct ensemble *sp_min = NULL;
+    int n;
+    int sockfd;
+    long    min = 0x7FFFFFFF;
+    struct sockaddr_in *addr;
+    char str[INET_ADDRSTRLEN];
+    
+    /* DNS lookup for Cometa servers in the ensemble */	
+	memset(&hints, 0, sizeof hints); // make sure the struct is empty
+	hints.ai_family = AF_INET;     // don't care IPv4 or IPv6
+	hints.ai_socktype = SOCK_STREAM; // TCP stream sockets
+	hints.ai_flags = AI_CANONNAME | AI_ADDRCONFIG;     // fill in IP list
+
+	if ((n = getaddrinfo(SERVERNAME, SERVERPORT, &hints, &result)) != 0) {
+		fprintf(stderr, "ERROR : getaddrinfo() could not get server name %s resolved (%s).\r\n", SERVERNAME, gai_strerror(n));
+	    return -1;
+	}
+    
+    /* start a thread to connect to each server in the ensemble */
+	for (rp = result; rp != NULL; rp = rp->ai_next) { 
+        addr = (struct sockaddr_in *)rp->ai_addr;
+        inet_ntop(AF_INET, &addr->sin_addr, str, sizeof str);
+        debug_print("DEBUG: ensemble connect. Found IP %s\n", str);
+        
+        sp = calloc(1, sizeof (struct ensemble));
+        /* add the entry to the list */
+        TAILQ_INSERT_TAIL(&servers, sp, next);
+        /* save the server addrinfo */
+        sp->ap = rp;
+        /* start a thread to open a connection to the associated server */
+        pthread_create(&sp->tid, NULL, server_connect, (void *)sp);
+	}
+    /* wait for all threads to complete the connection */
+    for (sp = TAILQ_FIRST(&servers); sp; sp = sp->next.tqe_next) {
+        pthread_join(sp->tid, NULL);
+    }
+    
+    /* find the server with the shortest delay */
+    for (sp = TAILQ_FIRST(&servers); sp; sp = sp->next.tqe_next) {
+        addr = (struct sockaddr_in *)sp->ap->ai_addr;
+        inet_ntop(AF_INET, &addr->sin_addr, str, sizeof str);
+        debug_print("DEBUG: connecting delay for %s: %ld\n", str, sp->delay);
+        
+        if (sp->sockfd == -1)
+            continue;
+        if (sp->delay < min) {
+            min = sp->delay;
+            sp_min = sp;
+        }
+    }    
+ 
+    sockfd = -1;
+    if (sp_min != NULL) {
+        addr = (struct sockaddr_in *)sp_min->ap->ai_addr;
+        inet_ntop(AF_INET, &addr->sin_addr, str, sizeof str);
+        /* open a socket with the selected server */
+        if ((sockfd = socket(sp_min->ap->ai_family, sp_min->ap->ai_socktype, sp_min->ap->ai_protocol)) == -1) {
+            fprintf(stderr, "ERROR: Could not open socket to server %s", str);
+        }
+        else
+            fprintf(stderr, "Connecting to server %s (%ld usec)\n", str, sp_min->delay);
+        /* connect to server */
+        if (connect(sockfd, sp_min->ap->ai_addr, sp_min->ap->ai_addrlen) == -1) {
+            fprintf(stderr, "ERROR: Could not connect to server %s", str);
+            sockfd = -1;
+        }   
+    }
+    
+    freeaddrinfo(result);
+    /* free list  */
+    while (servers.tqh_first != NULL)
+        TAILQ_REMOVE(&servers, servers.tqh_first, next);
+    
+    return sockfd;
+}   /* ensemble_connect */
+
+/*
  * Initialize the application to use the library.  
  *
  * @param device_id	- the id of the device to connect
- * @param platform - an (optional) platform description 
  * @param device_key - the device key
+ * @param platform - an (optional) platform description  
  *
  */
 cometa_reply
-cometa_init(const char *device_id, const char *platform, const char *device_key) {
+cometa_init(const char *device_id, const char *device_key, const char *platform) {
 	if (device_id && (strlen(device_id) <= DEVICE_ID_LEN))
 		device.id = strdup(device_id);
 	else
@@ -192,6 +363,9 @@ cometa_init(const char *device_id, const char *platform, const char *device_key)
 	else
 		device.info = NULL;
 	
+    /* ignore SIGPIPE and handle socket write errors inline  */
+    signal(SIGPIPE, SIG_IGN);
+
 	return COMEATAR_OK;
 }	/* cometa_init */
 
@@ -199,14 +373,15 @@ cometa_init(const char *device_id, const char *platform, const char *device_key)
 /* 
  * Subscribe the initialized device to a registered application. 
  * 
- * @param app_server_ip - the application server IP address
+ * @param app_server_name - the application server name
+ * @param app_server_port - the application server port
+ * @param auth_endpoint - the application server authorization endpoint
  * @param app_name - the application name
  * @param app_key - the application key
  *
  * @return	- the connection handle
  *
  */
- 
 struct cometa *
 cometa_subscribe(const char *app_name, const char *app_key, const char *app_server_name, const char *app_server_port, const char *auth_endpoint) {
 	struct cometa *conn;
@@ -216,100 +391,69 @@ cometa_subscribe(const char *app_name, const char *app_key, const char *app_serv
     char challenge[128];
 	pthread_attr_t attr;
 	int n, i;
-#ifdef NODEF	
-	struct sockaddr_in serv_addr;
-#endif
 	
-	conn = calloc(1, sizeof(struct cometa));
-	
-	/* save the parameters */
-	if (app_server_name)
-		conn->app_server_name = strdup(app_server_name);
-	else {
-		fprintf(stderr, "ERROR : Parameter error (app_server_name).\r\n");
-		conn->reply = COMETAR_PAR_ERROR;
-        return NULL;		
-	}
-	if (app_server_port)
-		conn->app_server_port = strdup(app_server_port);
-	else {
-		fprintf(stderr, "ERROR : Parameter error (app_server_port)\r\n");
-		conn->reply = COMETAR_PAR_ERROR;
-        return NULL;		
-	}	
-	if (app_name)
-		conn->app_name = strdup(app_name);
-	else {
-		fprintf(stderr, "ERROR : Parameter error (app_name)\r\n");
-		conn->reply = COMETAR_PAR_ERROR;
-        return NULL;		
-	}
-	if (app_key)
-		conn->app_key = strdup(app_key);
-	else {
-		fprintf(stderr, "ERROR : Parameter error (app_key)\r\n");
-		conn->reply = COMETAR_PAR_ERROR;
-        return NULL;		
-	}
-	if (auth_endpoint)
-		conn->auth_endpoint = strdup(auth_endpoint);
-	else {
-		fprintf(stderr, "ERROR : Parameter error (auth_endpoint)\r\n");
-		conn->reply = COMETAR_PAR_ERROR;
-        return NULL;		
-	}
-	
-	/* DNS lookup for Cometa server */	
-	memset(&hints, 0, sizeof hints); // make sure the struct is empty
-	hints.ai_family = AF_INET;     // don't care IPv4 or IPv6
-	hints.ai_socktype = SOCK_STREAM; // TCP stream sockets
-	hints.ai_flags = AI_CANONNAME | AI_ADDRCONFIG;     // fill in IP list
-
-	if ((n = getaddrinfo(SERVERNAME, SERVERPORT, &hints, &result)) != 0) {
-		fprintf(stderr, "ERROR : Could not get server name %s resolved (%s). Is the Cometa server running?\r\n", SERVERNAME, gai_strerror(n));
-		conn->reply = COMETAR_ERROR;
-	    return NULL;
-	}	
-	for (rp = result; rp != NULL; rp = rp->ai_next) {
-	     conn->sockfd = socket(rp->ai_family, rp->ai_socktype, rp->ai_protocol);
-	     if (conn->sockfd == -1)
-	         continue;
-
-	    if (connect(conn->sockfd, rp->ai_addr, rp->ai_addrlen) != -1)
-	         break;                  /* Success */
-
-	    close(conn->sockfd);
-	}
-	if (rp == NULL) {               /* No address succeeded */
-		fprintf(stderr, "ERROR : Could not get server name %s resolved (%s). Is the Cometa server running?\r\n", SERVERNAME, gai_strerror(n));
+    /* check when called for reconnecting */
+    if (conn_save != NULL) {
+        /* it is a reconnection */
+        conn = conn_save;
+        /* cancel the receive loop thread */
+        pthread_cancel(conn->tloop);
+        /* wait for the thread to complete */
+        pthread_join(conn->tloop, NULL);
+    } else {
+        /* allocate data structure when called the first time */
+        conn = calloc(1, sizeof(struct cometa));
+        /* save the global connection pointer for re-connecting */
+        conn_save = conn;
+    
+        /* save the parameters */
+        if (app_server_name)
+        	conn->app_server_name = strdup(app_server_name);
+        else {
+        	fprintf(stderr, "ERROR : Parameter error (app_server_name).\r\n");
+        	conn->reply = COMETAR_PAR_ERROR;
+            return NULL;		
+        }
+        if (app_server_port)
+        	conn->app_server_port = strdup(app_server_port);
+        else {
+        	fprintf(stderr, "ERROR : Parameter error (app_server_port)\r\n");
+        	conn->reply = COMETAR_PAR_ERROR;
+            return NULL;		
+        }	
+        if (app_name)
+        	conn->app_name = strdup(app_name);
+        else {
+        	fprintf(stderr, "ERROR : Parameter error (app_name)\r\n");
+        	conn->reply = COMETAR_PAR_ERROR;
+            return NULL;		
+        }
+        if (app_key)
+        	conn->app_key = strdup(app_key);
+        else {
+        	fprintf(stderr, "ERROR : Parameter error (app_key)\r\n");
+        	conn->reply = COMETAR_PAR_ERROR;
+            return NULL;		
+        }
+        if (auth_endpoint)
+        	conn->auth_endpoint = strdup(auth_endpoint);
+        else {
+        	fprintf(stderr, "ERROR : Parameter error (auth_endpoint)\r\n");
+        	conn->reply = COMETAR_PAR_ERROR;
+            return NULL;		
+        }
+        
+        /* initialize the server list */
+        TAILQ_INIT(&servers);
+    }
+    
+    /* select and connect to a server from the ensemble */
+    conn->sockfd = ensemble_connect();
+    if (conn->sockfd == -1) {               /* No address succeeded */
+		fprintf(stderr, "ERROR : Could not get server name %s resolved. Is the Cometa server running?\r\n", SERVERNAME);
 		conn->reply = COMETAR_ERROR;
 	  	return NULL;
 	}
-	freeaddrinfo(result);           /* No longer needed */
-
-#ifdef NODEF
-	/* create the connection socket */
-	if((conn->sockfd = socket(AF_INET, SOCK_STREAM, 0)) < 0) {
-        printf("ERROR : Could not create socket \n");
-		conn->reply = COMETAR_ERROR;
-        return NULL;
-    }
-	/* initialize Cometa server address */
-    memset(&serv_addr, '0', sizeof(serv_addr)); 
-    serv_addr.sin_family = AF_INET;
-    serv_addr.sin_port = htons(SERVERPORT); 
-    if(inet_pton(AF_INET, SERVERIP, &serv_addr.sin_addr)<=0) {
-        printf("ERROR: inet_pton error occured\n");
-		conn->reply = COMETAR_ERROR;
-		return NULL;
-    } 
-	/* connect to the Cometa server */
-    if(connect(conn->sockfd, (struct sockaddr *)&serv_addr, sizeof(serv_addr)) < 0) {
-       	printf("ERROR: Connect Failed \n");
-		conn->reply = COMETAR_ERROR;
-       	return NULL;
-    }
-#endif
 
     /*
      * ---------------------- step 1 of cometa authentication: send initial subscribe request to cometa
@@ -323,7 +467,7 @@ cometa_subscribe(const char *app_name, const char *app_key, const char *app_serv
     debug_print("DEBUG: sending URL:\r\n%s", conn->sendBuff);
     
     n = write(conn->sockfd, conn->sendBuff, strlen(conn->sendBuff));
-    if (n < 0)  {
+    if (n <= 0)  {
         fprintf(stderr, "ERROR: writing to cometa server socket.\r\n");
 		conn->reply = COMEATAR_NET_ERROR;
         return NULL;
@@ -374,7 +518,7 @@ cometa_subscribe(const char *app_name, const char *app_key, const char *app_serv
 	hints.ai_flags = AI_CANONNAME | AI_ADDRCONFIG;     // fill in IP list
 
 	if ((n = getaddrinfo(app_server_name, app_server_port, &hints, &result)) != 0) {
-		fprintf(stderr, "ERROR : Could not get server name %s resolved. step 1 (%s)\n", app_server_name, gai_strerror(n));
+		fprintf(stderr, "ERROR : Could not get server name %s resolved. step 2 (%s)\n", app_server_name, gai_strerror(n));
 		conn->reply = COMETAR_ERROR;
 	    return NULL;
 	}	
@@ -390,34 +534,11 @@ cometa_subscribe(const char *app_name, const char *app_key, const char *app_serv
 	    close(conn->app_sockfd);
 	}
 	if (rp == NULL) {               /* No address succeeded */
-		fprintf(stderr, "ERROR : Could not get server name %s resolved. step 1 (%s)\n", app_server_name, gai_strerror(n));
+		fprintf(stderr, "ERROR : Application server %s not running. step 2\n", app_server_name, gai_strerror(n));
 		conn->reply = COMETAR_ERROR;
 	  	return NULL;
 	}
 	freeaddrinfo(result);           /* No longer needed */
-
-#ifdef NODEF
-    if((conn->app_sockfd = socket(AF_INET, SOCK_STREAM, 0)) < 0) {
-        printf("ERROR : Could not create socket \n");
-		conn->reply = COMETAR_ERROR;
-        return NULL;
-    } 
-	/* application server IP address */
-    memset(&serv_addr, '0', sizeof(serv_addr)); 
-    serv_addr.sin_family = AF_INET;
-    serv_addr.sin_port = htons(app_server_port); 
-    if(inet_pton(AF_INET, app_server_ip, &serv_addr.sin_addr)<=0) {
-        printf("ERROR: inet_pton error occured\n");
-		conn->reply = COMETAR_ERROR;
-		return NULL;
-	} 
-	/* connect to the application server */
-    if(connect(conn->app_sockfd, (struct sockaddr *)&serv_addr, sizeof(serv_addr)) < 0) {
-       	printf("ERROR: Connect Failed \n");
-		conn->reply = COMETAR_ERROR;
-		return NULL;
-    } 
-#endif
 
     /* send HTTP GET /authenticate request to app server */
     sprintf(conn->sendBuff,"GET /%s?device_id=%s&device_key=%s&app_key=%s&challenge=%s HTTP/1.1\r\nHost: api.cometa.io\r\n\r\n\r\n",
@@ -503,31 +624,83 @@ cometa_subscribe(const char *app_name, const char *app_key, const char *app_serv
     /* device authentication handshake complete */
     /* ----------------------------------------------------------------------------------------------- */
 	
-	/* 
-	 * start the receive and heartbeat threads
-	 */
-	
-	/* initialize and set thread detached attribute */
-	pthread_attr_init(&attr);
-	pthread_attr_setdetachstate(&attr, PTHREAD_CREATE_DETACHED);
-	
-	pthread_rwlock_init(&(conn->hlock),NULL);
-	/* start the receive loop */
-	if (pthread_create(&conn->tloop, &attr, recv_loop, (void *)conn)) {
-		fprintf(stderr, "ERROR: Failed to create main loop thread. Exiting.\r\n");
-		exit(-1);
-	}
-	
-	/* start the heartbeat loop */
-	if (pthread_create(&conn->tbeat, &attr, send_heartbeat, (void *)conn)) {
-		fprintf(stderr, "ERROR: Failed to create heartbeat thread. Exiting.\r\n");
-		exit(-1);
-	}
-	pthread_attr_destroy(&attr);
-	
+    /* initialize and set thread detached attribute */ 
+    pthread_attr_init(&attr);
+    pthread_attr_setdetachstate(&attr, PTHREAD_CREATE_DETACHED);
+    /* 
+	 * start the receive and heartbeat threads if it is not a reconnection
+	 */    
+    if ((conn->tloop == 0) && (conn->tbeat == 0))  {
+    	pthread_rwlock_init(&(conn->hlock),NULL);
+    	/* start the receive loop */
+    	if (pthread_create(&conn->tloop, &attr, recv_loop, (void *)conn)) {
+    		fprintf(stderr, "ERROR: Failed to create main loop thread. Exiting.\r\n");
+    		exit(-1);
+    	}
+    	/* start the heartbeat loop */
+    	if (pthread_create(&conn->tbeat, &attr, send_heartbeat, (void *)conn)) {
+    		fprintf(stderr, "ERROR: Failed to create heartbeat thread. Exiting.\r\n");
+    		exit(-1);
+    	}
+    } else {
+        /* start a new receive loop thread: needed because it is now a new server and a new socket */
+        if (pthread_create(&conn->tloop, &attr, recv_loop, (void *)conn)) {
+    		fprintf(stderr, "ERROR: Failed to create main loop thread. Exiting.\r\n");
+    		exit(-1);
+    	} else
+            debug_print("DEBUG: Restarted receive loop.\r");
+    }
+    pthread_attr_destroy(&attr);
+    
 	conn->reply = COMEATAR_OK;
 	return conn;
 }	/* cometa_subscribe */
+
+/*
+ * Send a message upstream to the Cometa server. 
+ * 
+ * The message is relayed by Cometa to another server as specified in the webhook of the app in the registry.
+ * MESSAGE_LEN is the maximum message size.
+ *
+ */
+cometa_reply cometa_send(struct cometa *handle, const char *buf, const int size) {
+    int ret;
+    ssize_t n;
+    
+    if (MESSAGE_LEN - 12 < size) {
+        /* message too large */
+        return COMETAR_PAR_ERROR;
+    }
+    if ((ret = pthread_rwlock_rdlock(&handle->hlock)) != 0) {
+        fprintf(stderr, "ERROR: in send_heartbeat. Failed to get wrlock. ret = %d. Exiting.\r\n", ret);
+        exit (-1);
+    }
+	debug_print("DEBUG: sending message upstream.\r\n");
+    /* send the data-chunk length in hex */
+    sprintf(handle->sendBuff, "%x\r\n", size + 2);
+    n = write(handle->sockfd, handle->sendBuff, strlen(handle->sendBuff));
+    /* send the data-chunk which can be binary */
+    n = write(handle->sockfd, buf, size);
+    /* send a CR-LF */
+    n = write(handle->sockfd, "\r\n", 2);
+    
+    pthread_rwlock_unlock(&(handle->hlock));
+    /* check for SIGPIPE broken pipe */
+    if ((n < 0) && (errno == EPIPE)) {
+        /* connection lost */
+        debug_print("in cometa_send: n = %d, errno = %d\n", n, (int)errno);
+        /* do nothing and let the heartbeat thread to try to reconnect */
+        return COMEATAR_NET_ERROR;
+    }
+    if (n == 0) {
+        /* connection lost */
+        debug_print("in cometa_send: n = %d, errno = %d\n", n, (int)errno);
+        /* do nothing and let the heartbeat thread to try to reconnect */
+        return COMEATAR_NET_ERROR;    
+    }
+
+	return COMEATAR_OK;
+}   /* cometa_send */
 
 /*
  * Bind the @cb callback to the receive loop.

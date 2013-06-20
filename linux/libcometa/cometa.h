@@ -1,25 +1,12 @@
 /*
- * Cometa is a cloud infrastructure for embedded systems and connected 
- * devices developed by Visible Energy, Inc.
+ * @file    cometa.h
+ *
+ * @brief   Include file for the library to connect a linux device to the cometa infrastructure.
+ *
+ * Cometa is a cloud infrastructure for embedded systems and connected devices.
  *
  * Copyright (C) 2013, Visible Energy, Inc.
  * 
- * Licensed under the Apache License, Version 2.0 (the "License");
- *  you may not use this file except in compliance with the License.
- *  You may obtain a copy of the License at
- *
- * http://www.apache.org/licenses/LICENSE-2.0
- *
- * Unless required by applicable law or agreed to in writing, software
- * distributed under the License is distributed on an "AS IS" BASIS,
- * WITHOUT WARRANTIES OR CONDITIONS OF ANY KIND, either express or implied.
- * See the License for the specific language governing permissions and
- * limitations under the License.
- */
-
-/* @file
- * Cometa client library include file for vanilla linux systems.
- *
  */
 
 /** Public structures and constants **/
@@ -82,11 +69,11 @@ typedef char *(*cometa_message_cb)(const int data_size, void *data);
  * The optional parameter @platform is a string (max 64 chars [a-zA-Z] only) describing the device
  * platform and used only as information for device management and analytics.
  *
- * @return - the library connection handle
+ * @return - a reply code
  *
  */
 
-cometa_reply cometa_init(const char *device_id, const char *platform, const char *device_key);
+cometa_reply cometa_init(const char *device_id, const char *device_key, const char *platform);
 
 /* 
  * Subscribe the device to the application @app_name at the application server with FQ name
@@ -113,6 +100,15 @@ struct cometa *cometa_subscribe(const char *app_name, const char *app_key, const
  */
 
 cometa_reply cometa_bind_cb(struct cometa *handle, cometa_message_cb cb);
+
+/*
+ * Send a message upstream to the Cometa server. 
+ * 
+ * The message is relayed to another server as specified in the webhook of the app registry.
+ *
+ */
+ 
+cometa_reply cometa_send(struct cometa *handle, const char *buf, const int size);
 
 /*
  * Return the last reply error in a function for the connection in @handle.
