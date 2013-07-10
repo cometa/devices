@@ -46,9 +46,14 @@
  * APP_ENDPOINT - authentication endpoint for devices
  *
  */
+#ifdef NODEF
 #define APP_SERVERNAME "YOUR_APP_SERVERNAME"
 #define APP_SERVERPORT  "YOUR_APP_SERVERPORT"
 #define APP_ENDPOINT "YOUR_APP_ENDPOINT"
+#endif
+#define APP_SERVERNAME "ec2-54-241-16-55.us-west-1.compute.amazonaws.com"   // cloudfridge.io
+#define APP_SERVERPORT  "7017"  // appserver-cometatest.rb
+#define APP_ENDPOINT "/authenticate"
 
 /*
  * Cometa credentials. (for the server application)
@@ -56,8 +61,12 @@
  * COMETA_APP_NAME - cometa registered application name 
  * COMETA_APP_KEY -  cometa registered application key
  */
+#ifdef NODEF
 #define COMETA_APP_NAME "YOUR_COMETA_APP_NAME"
 #define COMETA_APP_KEY "YOUR_COMETA_APP_KEY"
+#endif
+#define COMETA_APP_NAME "cloudfridge"
+#define COMETA_APP_KEY "5465b57fdeb0d16712d6"
 
 /*
  * Device credentials.
@@ -65,8 +74,12 @@
  * DEVICE_ID - the ID of this device to use in Cometa
  * DEVICE_KEY - the key of this device for authenticating with the server application
  */
+#ifdef NODEF
 #define DEVICE_ID "YOUR_DEVICE_ID"
 #define DEVICE_KEY  "YOUR_DEVICE_KEY"
+#endif
+#define DEVICE_ID "77000"
+#define DEVICE_KEY  "777"
 
 /* 
  * The server application will be called by the cometa server for authenticating this device at:
