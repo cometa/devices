@@ -45,15 +45,16 @@
 /** Public structures and constants **/
 
 /* Cometa server FQ names and port */
-#ifndef USE_SSL
-#define SERVERPORT  "7007"
-#define SERVERNAME "ensemble.cometa.io"
-#endif
+//#define SERVERPORT  "7007"
+//#define SERVERNAME "ensemble.cometa.io"
 
 #ifdef USE_SSL
 #define SERVERPORT  "17007"
-#define SERVERNAME "service.cometa.io"
+#else
+#define SERVERPORT  "7007"
 #endif
+
+#define SERVERNAME "service.cometa.io"
 
 /* special one byte chunk-data line from devices */
 #define MSG_HEARTBEAT 0x06
@@ -93,6 +94,7 @@ http_parser parser;
 http_parser_settings settings;
 int header_complete;
 int body_complete;
+char *body_at;
 
 /*
  * Structure used during the connection process to track connections to all
@@ -135,6 +137,8 @@ int on_body(http_parser* _, const char* at, size_t length) {
   printf("\n*** BODY ***\n\n");
   printf("Body: %.*s\n", (int)length, at);
   body_complete = 1;
+  body_at = at;
+  *(body_at + length) = '\0';
   return 0;
 }
 
@@ -332,14 +336,18 @@ recv_loop(void *h) {
 	 * start a forever loop reverting the connection and receiving requests from the server 
 	 */
     while (1) {
-#ifdef USE_SSL
+
         /* read the first line of the chuck containing the body length */
         n = 0;
         do {
-           ret = SSL_read(handle->ssl, handle->recvBuff + n, 1);
-           ch = *(handle->recvBuff + n);
-           printf("--- %d %d\n", n, ch);
-           n++;
+#ifdef USE_SSL
+            ret = SSL_read(handle->ssl, handle->recvBuff + n, 1);
+#else
+            ret = read(handle->sockfd, handle->recvBuff + n, 1);
+#endif
+            ch = *(handle->recvBuff + n);
+            // printf("--- %d %d\n", n, ch);
+            n++;
         } while (ch != 10);
         handle->recvBuff[n] = '\0';
         
@@ -349,22 +357,28 @@ recv_loop(void *h) {
         /* read the chunk */
         n = 0;
         while (n < len) {
-            ret = SSL_read(handle->ssl, handle->recvBuff + n, sizeof(handle->recvBuff) -  1);
+#ifdef  USE_SSL
+            ret = SSL_read(handle->ssl, handle->recvBuff + n, len); // sizeof(handle->recvBuff) -  1);
+#else
+            ret = read(handle->sockfd, handle->recvBuff + n, len);
+#endif
             n += ret;
         }
  
         /* read a closing new line */
         do {
-           ret = SSL_read(handle->ssl, handle->recvBuff + n, 1);
-           ch = *(handle->recvBuff + n);
-           printf("... %d %d\n", n, ch);
-           n++;    
+#ifdef USE_SSL
+            ret = SSL_read(handle->ssl, handle->recvBuff + n, 1);
+#else
+            ret = read(handle->sockfd, handle->recvBuff + n, 1);
+#endif
+            ch = *(handle->recvBuff + n);
+            // printf("... %d %d\n", n, ch);
+            n++;    
         } while (ch != 10);
         
         handle->recvBuff[n] = '\0';  
-#else
-        n = read(handle->sockfd, handle->recvBuff, sizeof(handle->recvBuff) - 1);
-#endif
+        
         if ((MESSAGE_LEN - 1) < n) {
             fprintf(stderr, "ERROR: in message receive loop. Message too large. nbytes: %d, errno: %d.\r\n", n, errno);
             continue;
@@ -763,7 +777,7 @@ cometa_subscribe(const char *app_name, const char *app_key, const char *app_serv
         return NULL;
     }
     /* read response with challenge */
-#ifdef USE_SSL
+
 /*
     n = SSL_read(conn->ssl, conn->recvBuff, sizeof(conn->recvBuff) -  1);
     debug_print("DEBUG: 1 received (%zd):\r\n%s", strlen(conn->recvBuff), conn->recvBuff);
@@ -773,33 +787,41 @@ cometa_subscribe(const char *app_name, const char *app_key, const char *app_serv
     debug_print("DEBUG: 3 received (%zd):\r\n%s", strlen(conn->recvBuff), conn->recvBuff);
 */
     header_complete = 0;
+    body_complete = 0;
     n = 0;
     do {
+#ifdef USE_SSL
         ret = SSL_read(conn->ssl, conn->recvBuff + n, sizeof(conn->recvBuff) -  1);
+#else
+        ret = read(conn->sockfd, conn->recvBuff + n, sizeof(conn->recvBuff) -  1);
+#endif
         n += ret;
         
         http_parser_execute(&parser, &settings, conn->recvBuff, n);
     } while (!header_complete);
     
-    body_complete = 0;
     n = 0;
-    do {
+//    do {
+    while (!body_complete) {
+#ifdef USE_SSL
         ret = SSL_read(conn->ssl, conn->recvBuff + n, sizeof(conn->recvBuff) -  1);
+#else
+        ret = read(conn->sockfd, conn->recvBuff + n, sizeof(conn->recvBuff) -  1);
+#endif
         n += ret;
         
         http_parser_execute(&parser, &settings, conn->recvBuff, n);
-    } while (!body_complete);
+    }// while (!body_complete);
     
-#else
-    n = read(conn->sockfd, conn->recvBuff, sizeof(conn->recvBuff) -  1);
-#endif
     if(n < 0) {
         fprintf(stderr, "ERROR: Read error from cometa socket.\r\n");
     }
-    conn->recvBuff[n] = 0; 
-    debug_print("\nDEBUG: received (%zd):\r\n%s", strlen(conn->recvBuff), conn->recvBuff);
-
-    strcpy(challenge, conn->recvBuff);
+   // conn->recvBuff[n] = 0; 
+   // debug_print("\nDEBUG: received (%zd):\r\n%s", strlen(conn->recvBuff), conn->recvBuff);
+    
+    // strcpy(challenge, conn->recvBuff);
+    debug_print("\nDEBUG: received (%zd):\r\n%s", strlen(body_at), body_at);
+    strcpy(challenge, body_at);
     goto skip;
     
     data_p = strlen(conn->recvBuff);
@@ -923,23 +945,31 @@ skip:
 	}
 	
     /* read response with JSON object result */
-#ifdef USE_SSL
+
     /* skip a new line */
     n = 0;
     do {
-       ret = SSL_read(conn->ssl, conn->recvBuff + n, 1);
-       ch = *(conn->recvBuff + n);
-       printf("--- %d %d\n", n, ch);
-       n++;    
+#ifdef USE_SSL
+        ret = SSL_read(conn->ssl, conn->recvBuff + n, 1);
+#else
+        ret = read(conn->sockfd, conn->recvBuff + n, 1);
+#endif
+        ch = *(conn->recvBuff + n);
+        // printf("--- %d %d\n", n, ch);
+        n++;    
     } while (ch != 10);
     
     /* read the first line of the chuck containing the body length */
     n = 0;
     do {
-       ret = SSL_read(conn->ssl, conn->recvBuff + n, 1);
-       ch = *(conn->recvBuff + n);
-       printf("--- %d %d\n", n, ch);
-       n++;
+#ifdef USE_SSL
+        ret = SSL_read(conn->ssl, conn->recvBuff + n, 1);
+#else
+        ret = read(conn->sockfd, conn->recvBuff + n, 1);
+#endif
+        ch = *(conn->recvBuff + n);
+        // printf("--- %d %d\n", n, ch);
+        n++;
     } while (ch != 10);
     conn->recvBuff[n] = '\0';
     
@@ -949,15 +979,14 @@ skip:
     
     n = 0;
     while (n < len) {
+#ifdef USE_SSL
         ret = SSL_read(conn->ssl, conn->recvBuff + n, sizeof(conn->recvBuff) -  1);
+#else
+        ret = read(conn->sockfd, conn->recvBuff + n, sizeof(conn->recvBuff) -  1);
+#endif
         n += ret;
     }
     conn->recvBuff[n] = '\0';
-
-#else
-    n = read(conn->sockfd, conn->recvBuff, sizeof(conn->recvBuff) -  1);
-#endif
-    conn->recvBuff[n] = 0; 
 
     if(n < 0) {
         fprintf(stderr, "ERROR: Read error from cometa socket.\r\n");
@@ -976,15 +1005,19 @@ skip:
 		conn->reply = COMETAR_AUTH_ERROR;
 		return NULL;
 	} 
-    
+#ifdef USE_SSL    
     /* skip a new line */
     n = 0;
     do {
-       ret = SSL_read(conn->ssl, conn->recvBuff + n, 1);
-       ch = *(conn->recvBuff + n);
-       printf("[-] %d %d\n", n, ch);
-       n++;    
+
+        ret = SSL_read(conn->ssl, conn->recvBuff + n, 1);
+//#else
+        //ret = read(conn->sockfd, conn->recvBuff + n, 1);
+        ch = *(conn->recvBuff + n);
+        printf("[-] %d %d\n", n, ch);
+        n++;    
     } while (ch != 10);
+#endif
 	
 	/* TODO: extract heartbeat from response */
 	conn->hz = 60;	/* default to 1 min */
@@ -992,6 +1025,8 @@ skip:
     /* device authentication handshake complete */
     /* ----------------------------------------------------------------------------------------------- */
 	
+    debug_print("DEBUG: authentication handshake complete.\r\n");
+    
     /* initialize and set thread detached attribute */ 
     pthread_attr_init(&attr);
     pthread_attr_setdetachstate(&attr, PTHREAD_CREATE_DETACHED);
