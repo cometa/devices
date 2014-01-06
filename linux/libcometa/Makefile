@@ -2,9 +2,12 @@ CC=gcc
 PREFIX=/usr/local
 INCDIR=$(PREFIX)/include
 LIBDIR=$(PREFIX)/lib
+PKG_CONFIG_PATH=$(LIBDIR)/pkgconfig
 
-# Compile using `make XCFLAGS=-DDEBUG=1` to enable debugging code.
-CUSTOM_CFLAGS=-Wall -ggdb3 -O3 -DUSE_SSL
+INSTALL=install
+
+# Compile using -DUSE_SSL to use SSL
+CUSTOM_CFLAGS=-Wall -ggdb3 -O3 # -DUSE_SSL
 
 SOFLAGS=-fPIC 
 #SOFLAGS=
@@ -12,15 +15,15 @@ SOFLAGS=-fPIC
 # compile with DEBUG=1 to enable debug code 
 SYS_CFLAGS=-std=gnu99 $(SOFLAGS) -I. -pthread -DDEBUG=1
 
-#LIBS=`pkg-config --libs libcrypto`
-LIBS=
+LIBS=`pkg-config --libs libcrypto`
 
 #LDFLAGS=$(SOFLAGS) -shared -Wl,libcometa.so.0
 LDFLAGS=$(SOFLAGS) -shared -Wl,-soname,libcometa.so.0
 
+CFLAGS=$(CUSTOM_CFLAGS) $(SYS_CFLAGS)
+
 OBJS=cometa.o http_parser.o
 
-#all: libcometa.so.0.1 
 all: libcometa.so.0.1 libcometa.pc
 
 libcometa.so.0.1: $(OBJS)

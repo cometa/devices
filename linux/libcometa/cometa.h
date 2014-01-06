@@ -2,7 +2,7 @@
  * Cometa is a cloud infrastructure for embedded systems and connected 
  * devices developed by Visible Energy, Inc.
  *
- * Copyright (C) 2013, Visible Energy, Inc.
+ * Copyright (C) 2013, 2014 Visible Energy, Inc.
  * 
  * Licensed under the Apache License, Version 2.0 (the "License");
  *  you may not use this file except in compliance with the License.
@@ -43,7 +43,7 @@ struct cometa;
  * Result codes for Cometa functions 
  */
 typedef enum  {
-	COMEATAR_OK,			/* success */
+    COMEATAR_OK,			/* success */
 	COMEATAR_TIMEOUT,		/* time out before the request has completed */
 	COMEATAR_NET_ERROR,		/* network error */
 	COMEATAR_HTTP_ERROR,	/* HTTP error */
@@ -100,12 +100,26 @@ cometa_reply cometa_init(const char *device_id, const char *platform, const char
  * {"response":200,"signature":"946604ed1d981eca2879:babc3d687335043f55878b3f1eef94815327d6ad533e7c7f51fb30b8ca4683a1"}
  *                              <---- app_key ----->:<----------- HMAC SHA256(challenge, app_secret) --------------->
  *
+ * If app_server_name, app_server_port and auth_endpoint are NULL do not perform 2-way authentication with the 
+ * external server. Authentication will be only done using the app_key (one-way authentication).
+ *
  * @return - the connection handle or NULL in case of error
  *
  */
  
 struct cometa *cometa_subscribe(const char *app_name, const char *app_key, const char *app_server_name, const char *app_server_port, const char *auth_endpoint);
 
+/*
+ * Send a message upstream to the Cometa server. 
+ * 
+ * If a Webhook is specified for the Application, the message is relayed by Cometa to the server as specified in the webhook of the app in the registry.
+ * If the Application has a storage bucket specified, the message is stored in the data bucket.
+ *
+ * (MESSAGE_LEN - 12) is the maximum message size.
+ *
+ */
+cometa_reply cometa_send(struct cometa *handle, const char *buf, const int size);
+	
 /*
  * Bind the @cb callback to a message received event from the connection with the specified @handle.
  * The message received by the callback is zero-terminated.

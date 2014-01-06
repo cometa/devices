@@ -1,12 +1,26 @@
 /*
+ * Cometa is a cloud infrastructure for embedded systems and connected 
+ * devices developed by Visible Energy, Inc.
+ *
+ * Copyright (C) 2013, 2014 Visible Energy, Inc.
+ *
+ * Licensed under the Apache License, Version 2.0 (the "License");
+ * you may not use this file except in compliance with the License.
+ * You may obtain a copy of the License at
+ *
+ * http://www.apache.org/licenses/LICENSE-2.0
+ *
+ * Unless required by applicable law or agreed to in writing, software
+ * distributed under the License is distributed on an "AS IS" BASIS,
+ * WITHOUT WARRANTIES OR CONDITIONS OF ANY KIND, either express or implied.
+ * See the License for the specific language governing permissions and
+ * limitations under the License.
+ */
+ 
+/*
  * @file    cometa.c
  *
  * @brief   Library main code to connect a linux device to the cometa infrastructure.
- *
- * Cometa is a cloud infrastructure for embedded systems and connected devices.
- *
- * Copyright (C) 2013, Visible Energy, Inc.
-
  * 
  */
 
@@ -45,8 +59,7 @@
 /** Public structures and constants **/
 
 /* Cometa server FQ names and port */
-//#define SERVERPORT  "7007"
-//#define SERVERNAME "ensemble.cometa.io"
+#define SERVERNAME "ensemble.cometa.io"
 
 #ifdef USE_SSL
 #define SERVERPORT  "17007"
@@ -54,10 +67,13 @@
 #define SERVERPORT  "7007"
 #endif
 
-#define SERVERNAME "service.cometa.io"
+// used to verify the certificate -- TODO: the certificate should accept *.cometa.io
+#define VERIFY_SERVERNAME "service.cometa.io"
 
 /* special one byte chunk-data line from devices */
-#define MSG_HEARTBEAT 0x06
+#define MSG_HEARTBEAT   0x06
+/* special one byte chunk-data line from devices */
+#define MSG_UPSTREAM    0x07
 
 /* print debugging details on stderr */
 #define debug_print(...) \
@@ -68,7 +84,7 @@
  *
  */
 struct cometa {
-    int	sockfd;						/* socket to Cometa server */
+    int    sockfd;						/* socket to Cometa server */
 	char recvBuff[MESSAGE_LEN];		/* received buffer */
     char sendBuff[MESSAGE_LEN];		/* send buffer */
 	int	app_sockfd;					/* socket to the application server */
@@ -83,6 +99,7 @@ struct cometa {
 	pthread_rwlock_t hlock;     	/* lock for heartbeat */
 	int	hz;							/* heartbeat period in sec */	
 	cometa_reply reply;				/* last reply code */
+    int flag;                       /* disconnection flag */
 #ifdef USE_SSL
     BIO     *bconn;
     SSL     *ssl;
@@ -137,7 +154,7 @@ int on_body(http_parser* _, const char* at, size_t length) {
   printf("\n*** BODY ***\n\n");
   printf("Body: %.*s\n", (int)length, at);
   body_complete = 1;
-  body_at = at;
+  body_at = (char *)at;
   *(body_at + length) = '\0';
   return 0;
 }
@@ -302,11 +319,12 @@ send_heartbeat(void *h) {
 #else
 		n = write(handle->sockfd, handle->sendBuff, strlen(handle->sendBuff));
 #endif
+
 	    pthread_rwlock_unlock(&(handle->hlock));
         /* check for SIGPIPE broken pipe */
-        if ((n < 0) && (errno == EPIPE)) {
+        if (n <= 0 || handle->flag == 1) { //&& (errno == EPIPE)) {
             /* connection lost */
-            debug_print("in send_heartbeat: n = %d, errno = %d\n", n, (int)errno);
+            debug_print("in send_heartbeat: n = %d, errno = %d\n", (int)n, (int)errno);
             /* attempt to reconnect */
             /* TODO: add a random delay to avoid server flooding when many devices disconnect at the same time */
             ret_sub = cometa_subscribe(conn_save->app_name, conn_save->app_key, conn_save->app_server_name, conn_save->app_server_port, conn_save->auth_endpoint);
@@ -328,7 +346,7 @@ static void *
 recv_loop(void *h) {
 	char *response;
 	struct cometa *handle;
-	int n, p;
+	int n;
     int ret, ch, len;
 	
 	handle = (struct cometa *)h;
@@ -353,7 +371,7 @@ recv_loop(void *h) {
         
         /* convert from hex string to int */
         len = (int)strtol(handle->recvBuff, NULL, 16);
-        debug_print("DEBUG: first line:\r\n%s", handle->recvBuff);
+        debug_print("DEBUG: ret = %d - len = %d - n = %d - errno = %d - first line:\r\n%s", ret, len, n, errno, handle->recvBuff);
         /* read the chunk */
         n = 0;
         while (n < len) {
@@ -363,6 +381,15 @@ recv_loop(void *h) {
             ret = read(handle->sockfd, handle->recvBuff + n, len);
 #endif
             n += ret;
+        }
+        
+        if (n <= 0) {
+            debug_print("DEBUG: in message receive loop. Socket read: %d errno: %d.\r\n", n, errno);       
+            /* Possibly the server closed the connection. Nothing to recover really. The next heartbeat will attempt a new connection. */
+            /* Let the heartbeat thread to attempt a reconnection when the server has closed the socket (keep-alive) */
+            handle->flag = 1;
+            sleep(1);
+            continue;            
         }
  
         /* read a closing new line */
@@ -390,9 +417,10 @@ recv_loop(void *h) {
         }
         /* on STREAMS-based systems read() from a socket returns 0 when the connection is closed */
         if (n == 0) {
-            debug_print("DEBUG: in message receive loop. Socket read: %d errno: %d.\r\n", n, errno);       
+            debug_print("DEBUG: in message receive loop. Socket read: %d errno: %d.\r\n", n, errno);
             /* Nothing to recover really. The next heartbeat will attempt a new connection. */
             /* Let the heartbeat thread to attempt a reconnection when the server has closed the socket (keep-alive) */
+            handle->flag = 1;
             sleep(1);
             continue;            
         }
@@ -400,29 +428,19 @@ recv_loop(void *h) {
         if (n == -1 && errno == EINTR) {
             debug_print("DEBUG: in message receive loop. Socket read: %d errno: %d.\r\n", n, errno);       
             /* Nothing to recover really. The next heartbeat will attempt a new connection. */
+            handle->flag = 1;
             sleep(1);
             continue;
         }
         if (n < 0) {
             fprintf(stderr, "ERROR: in message receive loop. Socket read error. nbytes: %d, errno: %d.\r\n", n, errno);
+            handle->flag = 1;
             sleep(1);
             continue;
         }
 
-//        handle->recvBuff[n] = 0;
         /* received a command */
         debug_print("DEBUG: received from server:\r\n%s\n", handle->recvBuff);
-
-		/* the message is an HTTP data-chunk with the first line containing the message length in hex */
-		/* skip the first line containing the length of the data chunk */
-/*
-      p = 0;
-        while (handle->recvBuff[p] != 10 && handle->recvBuff[p] != 13)
-        	 p++;
-        do {
-		    p++;
-	    } while (handle->recvBuff[p] == 10 || handle->recvBuff[p] == 13); // TODO: check for p > n
-*/        
 
 		/* invoke the user callback */
         if (pthread_rwlock_rdlock(&(handle->hlock)) != 0) {
@@ -431,6 +449,7 @@ recv_loop(void *h) {
         } 
 		if (handle->user_cb) {
 			response = handle->user_cb(n, handle->recvBuff);
+			/* assume to receive a zero-terminated string from the application */
 			sprintf(handle->sendBuff, "%x\r\n%s\r\n", (int)strlen(response) + 2, response);
 		    debug_print("DEBUG: sending response:\r\n%s\n", handle->sendBuff);
 		} else {
@@ -490,11 +509,18 @@ void *server_connect(void *ptr) {
 /*
  * Connect to the server of the Cometa ensemble with the shortest connection delay.
  *
- * @result the connection socket or -1.
+ * @result the connection socket or -1 - the server name when using SSL
  *
  */
+
+#ifdef USE_SSL
 static
-int ensemble_connect(void) {
+char * ensemble_connect(void) 
+#else
+static
+int ensemble_connect(void) 
+#endif
+	{
     struct addrinfo hints;
 	struct addrinfo *result, *rp;
     struct ensemble *sp;
@@ -504,7 +530,8 @@ int ensemble_connect(void) {
     long    min = 0x7FFFFFFF;
     struct sockaddr_in *addr;
     char str[INET_ADDRSTRLEN];
-    
+	char *ptr;
+	    
     /* DNS lookup for Cometa servers in the ensemble */	
 	memset(&hints, 0, sizeof hints); // make sure the struct is empty
 	hints.ai_family = AF_INET;     // don't care IPv4 or IPv6
@@ -513,7 +540,11 @@ int ensemble_connect(void) {
 
 	if ((n = getaddrinfo(SERVERNAME, SERVERPORT, &hints, &result)) != 0) {
 		fprintf(stderr, "ERROR : getaddrinfo() could not get server name %s resolved (%s).\r\n", SERVERNAME, gai_strerror(n));
+#ifdef 	USE_SSL
+		return NULL;
+#else
 	    return -1;
+#endif
 	}
     
     /* start a thread to connect to each server in the ensemble */
@@ -547,8 +578,22 @@ int ensemble_connect(void) {
             min = sp->delay;
             sp_min = sp;
         }
-    }    
- 
+    }
+
+#ifdef USE_SSL
+	/* return only the name of the selected server */
+	ptr = NULL;
+   	if (sp_min != NULL) {
+        addr = (struct sockaddr_in *)sp_min->ap->ai_addr;
+        inet_ntop(AF_INET, &addr->sin_addr, str, sizeof str);
+		ptr = (char *)malloc(strlen(str) + 1);
+		strcpy(ptr, str);  
+		fprintf(stderr, "Connecting to server %s (%ld usec)\n", ptr, sp_min->delay);
+    }
+
+	return ptr;
+#else
+ 	/* proceed with connecting with the selected server */
     sockfd = -1;
     if (sp_min != NULL) {
         addr = (struct sockaddr_in *)sp_min->ap->ai_addr;
@@ -571,7 +616,10 @@ int ensemble_connect(void) {
     while (servers.tqh_first != NULL)
         TAILQ_REMOVE(&servers, servers.tqh_first, next);
     
+	/* return the socket */
     return sockfd;
+#endif
+
 }   /* ensemble_connect */
 
 /*
@@ -625,11 +673,15 @@ cometa_init(const char *device_id,  const char *platform, const char *device_key
 /* 
  * Subscribe the initialized device to a registered application. 
  * 
+ * @param app_name - the application name
+ * @param app_key - the application key
  * @param app_server_name - the application server name
  * @param app_server_port - the application server port
  * @param auth_endpoint - the application server authorization endpoint
- * @param app_name - the application name
- * @param app_key - the application key
+ *
+ * @info if app_server_name, app_server_port and auth_endpoint are NULL
+ * do not perform the server authentication step. Authentication will be
+ * only done using the app_key (one-way authentication).
  *
  * @return	- the connection handle
  *
@@ -644,14 +696,17 @@ cometa_subscribe(const char *app_name, const char *app_key, const char *app_serv
 	pthread_attr_t attr;
 	int n, i, ret;
     int ch, len;
+    int auth_server;
 #ifdef USE_SSL
     long err;
+	char server_name[INET_ADDRSTRLEN + 12];
 #endif
 	
     /* check when called for reconnecting */
     if (conn_save != NULL) {
         /* it is a reconnection */
         conn = conn_save;
+        conn->flag = 0;
         /* cancel the receive loop thread */
         pthread_cancel(conn->tloop);
         /* wait for the thread to complete */
@@ -659,26 +714,13 @@ cometa_subscribe(const char *app_name, const char *app_key, const char *app_serv
     } else {
         /* allocate data structure when called the first time */
         conn = calloc(1, sizeof(struct cometa));
+        conn->flag = 0;
         /* save the global connection pointer for re-connecting */
         conn_save = conn;
     
         /* save the parameters */
-        if (app_server_name)
-        	conn->app_server_name = strdup(app_server_name);
-        else {
-        	fprintf(stderr, "ERROR : Parameter error (app_server_name).\r\n");
-        	conn->reply = COMETAR_PAR_ERROR;
-            return NULL;		
-        }
-        if (app_server_port)
-        	conn->app_server_port = strdup(app_server_port);
-        else {
-        	fprintf(stderr, "ERROR : Parameter error (app_server_port)\r\n");
-        	conn->reply = COMETAR_PAR_ERROR;
-            return NULL;		
-        }	
         if (app_name)
-        	conn->app_name = strdup(app_name);
+            conn->app_name = strdup(app_name);
         else {
         	fprintf(stderr, "ERROR : Parameter error (app_name)\r\n");
         	conn->reply = COMETAR_PAR_ERROR;
@@ -691,30 +733,53 @@ cometa_subscribe(const char *app_name, const char *app_key, const char *app_serv
         	conn->reply = COMETAR_PAR_ERROR;
             return NULL;		
         }
+#ifdef USE_SSL
+        conn->ctx = setup_client_ctx();
+#endif
+        /* initialize the server list */
+        TAILQ_INIT(&servers);
+    }
+    
+    /* if all the server parameters are NULL do not perform the server authentication step */
+    if (app_server_name == NULL && app_server_port == NULL && auth_endpoint == NULL) {
+        auth_server = 0;
+    } else {
+        auth_server = 1;
+        if (app_server_name)
+            conn->app_server_name = strdup(app_server_name);
+        else {
+            fprintf(stderr, "ERROR : Parameter error (app_server_name).\r\n");
+        	conn->reply = COMETAR_PAR_ERROR;
+            return NULL;		
+        }
+        if (app_server_port)
+        	conn->app_server_port = strdup(app_server_port);
+        else {
+        	fprintf(stderr, "ERROR : Parameter error (app_server_port)\r\n");
+        	conn->reply = COMETAR_PAR_ERROR;
+            return NULL;		
+        }	
         if (auth_endpoint)
         	conn->auth_endpoint = strdup(auth_endpoint);
         else {
         	fprintf(stderr, "ERROR : Parameter error (auth_endpoint)\r\n");
         	conn->reply = COMETAR_PAR_ERROR;
             return NULL;		
-        }
-#ifdef USE_SSL
-        conn->ctx = setup_client_ctx();
-#endif
-        
-        /* initialize the server list */
-        TAILQ_INIT(&servers);
+        }            
     }
-
+    
 #ifdef USE_SSL
-    conn->bconn = BIO_new_connect(SERVERNAME ":" SERVERPORT);
+    /* call ensemble_connect() to get the server name */
+	sprintf(server_name, "%s:%s", ensemble_connect(), SERVERPORT);
+    conn->bconn = BIO_new_connect(server_name);
     if (!conn->bconn) {
         fprintf(stderr, "Error creating connection BIO.\n");
         conn->reply = COMETAR_ERROR;
       	return NULL;
     }
  
-    if (BIO_set_nbio(conn->ssl, 0) != 0) {
+    /* set connection blocking */
+    if (BIO_set_nbio(conn->bconn, 0) != 1) {
         fprintf(stderr, "Unable to set BIO to blocking mode.\n");
         conn->reply = COMETAR_ERROR;
         return NULL;     
@@ -725,8 +790,6 @@ cometa_subscribe(const char *app_name, const char *app_key, const char *app_serv
         conn->reply = COMETAR_ERROR;
 	  	return NULL;
     }
-    /* set connection blocking */
-    BIO_set_nbio(conn->bconn, 0);
      
     conn->ssl = SSL_new(conn->ctx);
     SSL_set_mode(conn->ssl, SSL_MODE_AUTO_RETRY);
@@ -738,7 +801,7 @@ cometa_subscribe(const char *app_name, const char *app_key, const char *app_serv
         conn->reply = COMETAR_ERROR;
       	return NULL;        
     }
-    if ((err = post_connection_check(conn->ssl, SERVERNAME)) != X509_V_OK) {
+	if ((err = post_connection_check(conn->ssl, VERIFY_SERVERNAME)) != X509_V_OK) {
         fprintf(stderr, "-Error: peer certificate: %s\n", X509_verify_cert_error_string(err));
         fprintf(stderr, "Error checking SSL object after connection.\n");
         conn->reply = COMETAR_ERROR;
@@ -757,14 +820,21 @@ cometa_subscribe(const char *app_name, const char *app_key, const char *app_serv
 
     /*
      * ---------------------- step 1 of cometa authentication: send initial subscribe request to cometa
-     *   GET /subscribe?<app_name>&<device_id>[&<platform]
+     *   GET /subscribe?<app_name>&<app_key>&<device_id>[&<platform]
      *
      */
-    if (device.info)
-    	sprintf(conn->sendBuff, "GET /subscribe?app_name=%s&device_id=%s&platform=%s HTTP/1.1\r\nHost: api.cometa.io\r\n\r\n\r\n", app_name, device.id, device.info);
-	else
-		sprintf(conn->sendBuff, "GET /subscribe?app_name=%s&device_id=%s HTTP/1.1\r\nHost: api.cometa.io\r\n\r\n\r\n", app_name, device.id);
-    debug_print("DEBUG: sending URL:\r\n%s", conn->sendBuff);
+    if (auth_server == 1) {
+        if (device.info)
+            sprintf(conn->sendBuff, "GET /subscribe?app_name=%s&app_key=%s&device_id=%s&platform=%s HTTP/1.1\r\nHost: api.cometa.io\r\nCometa-Authentication: YES\r\n\r\n\r\n", app_name, app_key, device.id, device.info);
+    	else
+    		sprintf(conn->sendBuff, "GET /subscribe?app_name=%s&app_key=%s&device_id=%s HTTP/1.1\r\nHost: api.cometa.io\r\nCometa-Authentication: YES\r\n\r\n\r\n", app_name, app_key, device.id);
+    } else {
+        if (device.info)
+            sprintf(conn->sendBuff, "GET /subscribe?app_name=%s&app_key=%s&device_id=%s&platform=%s HTTP/1.1\r\nHost: api.cometa.io\r\nCometa-Authentication: NO\r\n\r\n\r\n", app_name, app_key, device.id, device.info);
+    	else
+    		sprintf(conn->sendBuff, "GET /subscribe?app_name=%s&app_key=%s&device_id=%s HTTP/1.1\r\nHost: api.cometa.io\r\nCometa-Authentication: NO\r\n\r\n\r\n", app_name, app_key, device.id);
+    }
+   debug_print("DEBUG: sending URL:\r\n%s", conn->sendBuff);
 
 #ifdef USE_SSL
     n = SSL_write(conn->ssl, conn->sendBuff, strlen(conn->sendBuff));
@@ -776,16 +846,11 @@ cometa_subscribe(const char *app_name, const char *app_key, const char *app_serv
 		conn->reply = COMEATAR_NET_ERROR;
         return NULL;
     }
+    /* jump to receiving the authentication confirmation if server authentication is not needed */
+    if (auth_server == 0)
+        goto end_auth;
+        
     /* read response with challenge */
-
-/*
-    n = SSL_read(conn->ssl, conn->recvBuff, sizeof(conn->recvBuff) -  1);
-    debug_print("DEBUG: 1 received (%zd):\r\n%s", strlen(conn->recvBuff), conn->recvBuff);
-    n += SSL_read(conn->ssl, conn->recvBuff + n, sizeof(conn->recvBuff) -  1);
-    debug_print("DEBUG: 2 received (%zd):\r\n%s", strlen(conn->recvBuff), conn->recvBuff);
-    n += SSL_read(conn->ssl, conn->recvBuff + n, sizeof(conn->recvBuff) -  1);
-    debug_print("DEBUG: 3 received (%zd):\r\n%s", strlen(conn->recvBuff), conn->recvBuff);
-*/
     header_complete = 0;
     body_complete = 0;
     n = 0;
@@ -801,7 +866,6 @@ cometa_subscribe(const char *app_name, const char *app_key, const char *app_serv
     } while (!header_complete);
     
     n = 0;
-//    do {
     while (!body_complete) {
 #ifdef USE_SSL
         ret = SSL_read(conn->ssl, conn->recvBuff + n, sizeof(conn->recvBuff) -  1);
@@ -816,8 +880,6 @@ cometa_subscribe(const char *app_name, const char *app_key, const char *app_serv
     if(n < 0) {
         fprintf(stderr, "ERROR: Read error from cometa socket.\r\n");
     }
-   // conn->recvBuff[n] = 0; 
-   // debug_print("\nDEBUG: received (%zd):\r\n%s", strlen(conn->recvBuff), conn->recvBuff);
     
     // strcpy(challenge, conn->recvBuff);
     debug_print("\nDEBUG: received (%zd):\r\n%s", strlen(body_at), body_at);
@@ -925,6 +987,17 @@ skip:
     for (i = 0; i < (data_p - data_s + 1); i++)
     	 challenge[i] = conn->recvBuff[i + data_s];
     challenge[i] = '\0';
+    
+    /* check for key mistmach
+     *
+     * {"response":400,"error":"Application key mismatch."}
+     */
+     if (strcmp(challenge, "Application key mismatch.") == 0) {
+         /* return error */
+        debug_print("DEBUG: key mismatch error authenticationg with application server.\r\n");
+        conn->reply = COMETAR_AUTH_ERROR;
+		return NULL;
+     }
      
     /*
      *  ---------------------- step 3 of cometa authentication: send signature back to cometa server
@@ -944,9 +1017,8 @@ skip:
     	return NULL;
 	}
 	
+end_auth:    
     /* read response with JSON object result */
-
-    /* skip a new line */
     n = 0;
     do {
 #ifdef USE_SSL
@@ -968,7 +1040,6 @@ skip:
         ret = read(conn->sockfd, conn->recvBuff + n, 1);
 #endif
         ch = *(conn->recvBuff + n);
-        // printf("--- %d %d\n", n, ch);
         n++;
     } while (ch != 10);
     conn->recvBuff[n] = '\0';
@@ -992,33 +1063,31 @@ skip:
         fprintf(stderr, "ERROR: Read error from cometa socket.\r\n");
     }
     debug_print("DEBUG: received (%zd):\r\n%s\n", strlen(conn->recvBuff), conn->recvBuff);
-	/* 
+
+#ifdef USE_SSL    
+    /* read another line */
+    do {
+        ret = SSL_read(conn->ssl, conn->recvBuff + n, 1);
+        ch = *(conn->recvBuff + n);
+        n++;    
+    } while (ch != 10);
+    
+    conn->recvBuff[n] = '\0';
+    debug_print("DEBUG: received (%zd):\r\n%s\n", strlen(conn->recvBuff), conn->recvBuff);
+#endif
+    /* 
 	 * A JSON object is returned by the Cometa server:
-	 *
-	 * 	authentication success:{ "status": "200", "heartbeat": "60" } 
-	 *
-	 * 	authentication failed: { "status": "403" }
+	 * 	 success:{ "status": "200", "heartbeat": "60" } 
+	 * 	 failed: { "status": "403" }
 	 */
-	
-	/* simple check if the response contains the 403 status */
+     
+    /* simple check if the response contains the 403 status */
 	if (strstr(conn->recvBuff, "403")) {
+	    debug_print("DEBUG: Error Status 403 returned from Cometa server.\r\n");
 		conn->reply = COMETAR_AUTH_ERROR;
 		return NULL;
 	} 
-#ifdef USE_SSL    
-    /* skip a new line */
-    n = 0;
-    do {
 
-        ret = SSL_read(conn->ssl, conn->recvBuff + n, 1);
-//#else
-        //ret = read(conn->sockfd, conn->recvBuff + n, 1);
-        ch = *(conn->recvBuff + n);
-        printf("[-] %d %d\n", n, ch);
-        n++;    
-    } while (ch != 10);
-#endif
-	
 	/* TODO: extract heartbeat from response */
 	conn->hz = 60;	/* default to 1 min */
 	
@@ -1062,8 +1131,10 @@ skip:
 /*
  * Send a message upstream to the Cometa server. 
  * 
- * The message is relayed by Cometa to another server as specified in the webhook of the app in the registry.
- * MESSAGE_LEN is the maximum message size.
+ * If a Webhook is specified for the Application, the message is relayed by Cometa to the server as specified in the webhook of the app in the registry.
+ * If the Application has a storage bucket specified, the message is stored in the data bucket.
+ *
+ * (MESSAGE_LEN - 12) is the maximum message size.
  *
  */
 cometa_reply cometa_send(struct cometa *handle, const char *buf, const int size) {
@@ -1079,8 +1150,12 @@ cometa_reply cometa_send(struct cometa *handle, const char *buf, const int size)
         exit (-1);
     }
 	debug_print("DEBUG: sending message upstream.\r\n");
+	
+	/* The device uses the MSG_UPSTREAM message marker in the first character to indicate  */
+    /* an upstream message that is not a response to a publish request. */
+    
     /* send the data-chunk length in hex */
-    sprintf(handle->sendBuff, "%x\r\n", size + 2);
+    sprintf(handle->sendBuff, "%x\r\n%c", size + 3, MSG_UPSTREAM);
 #ifdef USE_SSL
     n = SSL_write(handle->ssl, handle->sendBuff, strlen(handle->sendBuff));
     /* send the data-chunk which can be binary */
@@ -1096,16 +1171,17 @@ cometa_reply cometa_send(struct cometa *handle, const char *buf, const int size)
 #endif
     
     pthread_rwlock_unlock(&(handle->hlock));
+
     /* check for SIGPIPE broken pipe */
     if ((n < 0) && (errno == EPIPE)) {
         /* connection lost */
-        debug_print("in cometa_send: n = %d, errno = %d\n", n, (int)errno);
+        debug_print("in cometa_send: n = %d, errno = %d\n", (int)n, (int)errno);
         /* do nothing and let the heartbeat thread to try to reconnect */
         return COMEATAR_NET_ERROR;
     }
-    if (n == 0) {
+    if (n <= 0) {
         /* connection lost */
-        debug_print("in cometa_send: n = %d, errno = %d\n", n, (int)errno);
+        debug_print("in cometa_send: n = %d, errno = %d\n", (int)n, (int)errno);
         /* do nothing and let the heartbeat thread to try to reconnect */
         return COMEATAR_NET_ERROR;    
     }
@@ -1131,4 +1207,3 @@ cometa_reply
 cometa_error(struct cometa *handle) {
 	return handle->reply;
 }
-
