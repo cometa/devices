@@ -4,25 +4,93 @@ Cometa
 
 [www.cometa.io](http://www.cometa.io)
 
-Cometa is an edge server that maintains long-lived, bi-directional HTTP(S) connections to remote devices with a simple publish-subscribe interaction pattern. It offers a hosted API at api.cometa.io that is used by both the software in a device and in the application server that intends to communicate with the device.
+Cometa is an edge server that maintains long-lived, bi-directional HTTP(S) connections to remote devices with a simple publish-subscribe interaction pattern. 
+It offers a hosted API at `ensemble.cometa.io` that is used by both firmware in the devices and applications that intend to communicate with them. 
+The library in this repository is for use by the firmware in the device. 
 
-A device that "subscribes" to a registered Cometa application allows the associated application server to securely send messages "published" to the device's unique ID communication channel. A message received by the device results in a action by the device and in a response message, that is sent back to the Cometa server and relayed to the application server in a synchronous HTTP operation. This way Cometa delivers low-latency, one-to-one messages between your application server and enabled devices regardless of NAT and firewalls.
+After registering with the Cometa service and creating an "application" with the server, a developer will receive an application key and a secret key that
+are the credentials used by Cometa to allow communication with all the devices that belong to the "application".
 
-This repository contains the Cometa device client and server libraries, and examples for a number of different embedded systems OS targets. Very little code is needed in the device, and the provided client library makes it easy for an embedded application to use the Cometa API.
+that is used by both the software in a device and in the application server that intends to communicate with the device.
+
+A device that "subscribes" to a registered Cometa "application" is enabled to:
+
+1) receive messages
+
+2) reply to messages 
+
+3) send upstream data (without a request)
+
+Messages are delivered to the devices as raw data, as Cometa does not specify a wire protocol. A message is expected a response from the device and Cometa
+will relay that response to the requestor in real-time, without storing any data in the message or in the response.
+
+Upstream data can be either forwarded by a device to a server specified in a Web-hook parameter associated with the registered "application", or stored in the 
+Cometa server no-SQL database for a specified amount of time. Data stored this way in the Cometa server are accessible in bulk on a device per device basis, as time series.
+
+A message received by the device results in a action by the device and in a response message, that is sent back to the Cometa server and relayed to the requesting application 
+in a synchronous HTTP operation. This way Cometa delivers low-latency, one-to-one messages between an application and enabled devices regardless of NAT and firewalls.
+
+Applications interacting with devices using Cometa can be full fledged server applications that "pubish" messages to the device, or pure client applications using websockets 
+for device interaction. Each device "subscribed" to Cometa exposes its own unique endpoint, that is a URI that a client application can use as a websocket for secure,
+two-way interactions. From the device standpoint, there is no difference between messages received through a "publish" HTTP POST operation to Cometa, or from a client
+application through the associated Cometa websocket.
+
+This repository contains the Cometa device client library, and examples for a number of different embedded systems OS targets.
+Very little code is needed in the device, and the provided client library makes it easy for an embedded application to use the Cometa API.
 
 *Note: the Cometa server and hosted API service is currently in private beta.*
+
 Synopsis
 --------
 Build the libcometa library and examples first. On a linux system, build a client program with the compile flags provided by `pkg-config --cflags libcometa`
 and build flags based on the output of `pkg-config --libs libcometa`.
 
-	#include <cometa.h>
+    #include <cometa.h>
+    
+    #define COMETA_APP_NAME "YOUR_COMETA_APP_NAME"
+    #define COMETA_APP_KEY "YOUR_COMETA_APP_KEY"
 
-	/* todo: add simple client code */
-	
-	do {
-	
-	} while(1);
+    #define DEVICE_ID "YOUR_DEVICE_ID"
+    #define DEVICE_KEY  "YOUR_DEVICE_KEY"
+    
+    int 
+    main(int argc, char *argv[]) {
+        struct cometa *cometa;
+        cometa_reply ret;
+    	
+    	/* Initialize this device to use the cometa library */
+    	ret = cometa_init(DEVICE_ID, "linux_client", DEVICE_KEY);
+    	if (ret != COMEATAR_OK) {
+    		fprintf(stderr, "DEBUG: Error in cometa_init: %d. Exiting.\r\n", ret);
+    		exit(-1);
+    	}
+    	
+    	/* Subscribe to cometa using one-step authentication */	
+    	cometa = cometa_subscribe(COMETA_APP_NAME, COMETA_APP_KEY, NULL, NULL, NULL);
+    	if (cometa == NULL) {
+    		fprintf(stderr, "DEBUG: Error in cometa_subscribe. Exiting.\r\n");
+    		exit(-1);
+    	}
+    	
+    	/* Bind the callback for messages received from the application server (via cometa) */
+    	ret = cometa_bind_cb(cometa, message_handler);
+    	if (ret != COMEATAR_OK) {
+    		fprintf(stderr, "DEBUG: Error in cometa_bind_cb: %d. Exiting.\r\n", ret);
+    		exit(-1);
+    	}
+    	printf("%s: connection completed for device ID: %s\r\n", argv[0], DEVICE_ID);
+    	
+        /* 
+         * The main() thread is done, this device is subscribed to cometa and is ready to receive
+    	 * messages handled by the callback. Here is where this application's main loop starts.
+         *
+    	 */
+        do {
+            /* Application main loop */
+            
+    	    sleep(1);
+    	} while(1);
+    }
 
 More detailed examples are provided for several target devices and OS.
 
@@ -35,6 +103,8 @@ To build the cometa client library use the command:
 On linux hosted environments proceed with:
 
 	sudo make install
+	
+If using SSL copy the rootcert.pem CA root certificate in a proper directory for use with SSL_CTX_load_verify_locations().
 
 Usage
 ------
@@ -70,29 +140,44 @@ The Cometa API is hosted at api.cometa.io and must be accessed via HTTP or HTTPS
 A response to a API request is a hash containing at least the response code. If the response code is `"response": "200"`, other attributes may be returned in the response hash.
 
 ###Subscribe
-
-    GET /subscribe?<device_id>&<device_key>[&<platform]
-
+    
+    GET /subscribe?<app_name>&<app_key>&<device_id>[&<platform]
+    
+Headers: 
+    Cometa-Authentication: [YES | NO]
+    
 Parameters:
 
 * device\_id - the unique device ID (max 32 characters)
 * device\_key - the device authentication key
+* app\_key - the application key
 * platform - (optional) an information string used to identify the device type (max 64 characters)
 
 Successful response:
 
 	{
 		"status": "200",
-		"heartbeat": "60"
+		"heartbeat": "60",
+        "epoch": "1379030944"
 	}
 
-If the device is successfully subscribed, in the response hash there is a heartbeat frequency in seconds for the device. This is only a hint and devices can decide whether to use it or to ignore it. The HTTP connection is reverted and persisted.
+If the device is successfully subscribed, in the response hash there is a heartbeat frequency in seconds for the device and the epoch time of the server. 
+The heartbeat frequency is only a hint and devices can decide whether to use it or to ignore it. The server epoch time may be useful for embedded device
+to initialize a system timer or to synchronize a hardware Real-Time Clock.
+
+Once the device is subscribed, the HTTP(S) connection is reverted and persisted.
 
 A status other than 200 in the hash, means that the device has not authenticated and the connection closed. 
 
-Subscribing a device to a Cometa hosted application is the authentication process that allow a device to establish a permanent connection with the Cometa server. Authenticating a device involves a 3-way handshaking between the device itself, the application server, and the Cometa server. A device has a limited time to complete the authentication handshake before the Cometa server times out and closes the connection.
+Subscribing a device to a Cometa hosted application is the authentication process that allow a device to establish a permanent connection with the Cometa server. 
+Authenticating a device can be done with a one-way authentication or a two-way authentication. The optional `Cometa-Authentication` HTTP header in the request
+has the value `YES` if a two-way authentication is needed. Otherwise a one-way authentication is performed. The default value is `YES`.
 
-The following diagrams illustrates the device authentication process:
+A one-way authentication is performed by the Cometa server only, using the provided application key. 
+A two-way authentication involves a 3-way handshaking between the device itself, the application server, and the Cometa server. 
+A device has a limited time to complete the authentication handshake before the Cometa server times out and closes the connection.
+
+The following diagrams illustrates the device two-way authentication process:
 
 ![Authentication](http://www.websequencediagrams.com/cgi-bin/cdraw?lz=b3B0IERldmljZSBBdXRoZW50aWNhdGlvbiBTZXF1ZW5jZQpwYXJ0aWNpcGFuACMIAAYNV2ViQXBwABkNQ29tZXRhCgBSBi0-AAkGOiBHRVQgL3N1YnNjcmliZT88YXBwX25hbWU-JjxkAH4FX2lkPgoANwYtPgCBEAY6IENvbm5lYwCBDgVlc3RhYmxpc2hlZCAoImNoYWxsZW5nZSIpAGIJAIEHBjogaHR0cDoveW91cmFwcC9hAIFQCmU_AGELAG8Ja2V5PiYAgQsFAAQGAFIJPgoAgVkGAIEFCkhNQUMoAHIJLCBzZWNyZXQAeAoAgWUIKABHBzoAGhcpAIFYEQCDAAdTAIIZCGQgKCIyMDAiKQplbmQKCg&s=rose)
 
@@ -129,6 +214,29 @@ A device may respond with a reply message that is returned back in the "reply" a
 		"device" : "40:6c:8f:08:7d:5c",
 		"reply" : "{ "temperature" : "75.3","humidity":"35.7"}"
 	}
+	
+## Generate a Publish signature
+
+The following gist illustrates the Ruby code to generate a Publish signature:
+
+    $ irb
+    >> require 'openssl'
+    => true
+    >> app_name="star"
+    => "star"
+    >> app_key="a54fca5262b26e58b66e"
+    => "a54fca5262b26e58b66e"
+    >> app_secret="2367f4aedaf70fd64dd1"
+    => "2367f4aedaf70fd64dd1"
+    >> device_id="1001-01"
+    => "1001-01"
+    >> cmd = "/publish?device_id=" + device_id + "app_name=" + app_name + "app_key=" + app_key
+    => "/publish?device_id=1001-01app_name=starapp_key=a54fca5262b26e58b66e"
+    >> auth_signature = OpenSSL::HMAC.hexdigest('sha256', app_secret, cmd)
+    => "0ea25fd7d3d6e37fcffebc193f307d8e0bc282fec9f6ebdc3ff29fcd6f4a9ec9"
+    >> cmd += "&auth_signature=" + auth_signature
+    => "/publish?device_id=1001-01app_name=starapp_key=a54fca5262b26e58b66e&auth_signature=0ea25fd7d3d6e37fcffebc193f307d8e0bc282fec9f6ebdc3ff29fcd6f4a9ec9"
+
 
 ###Info
 
@@ -159,4 +267,3 @@ Successful response:
 	        "latency": "32"
 	    }
 	}
-
