@@ -57,13 +57,17 @@
 /*
  * Device credentials.
  *
- * DEVICE_ID - the ID of this device to use in Cometa as returned by get_device_id()
+ * DEVICE_ID - the ID of this device to use in Cometa as a literal or returned by get_device_id()
  * DEVICE_KEY - the key of this device for authenticating with your server application
  */
-static char * get_device_id(void);
-char *DEVICE_ID = get_device_id();
-
+#define DEVICE_ID "YOUR_DEVICE_ID"
 #define DEVICE_KEY  "YOUR_DEVICE_KEY"
+
+static char * get_device_id(void);
+/* use the declaration below when DEVICE_ID is returned by get_device_id() */
+#ifdef NODEF
+char *DEVICE_ID;
+#endif
 
 /* 
  * Server application details.
@@ -197,6 +201,10 @@ main(int argc, char *argv[]) {
      * Note: the Cometa library sets to ignore SIGPIPE signals (broken pipe).
      *
      */
+	/* use the statement below when DEVICE_ID is returned by get_device_id() */
+#ifdef NODEF
+	DEVICE_ID = get_device_id();
+#endif     
 	ret = cometa_init(DEVICE_ID, "linux_client", DEVICE_KEY);
 	if (ret != COMEATAR_OK) {
 		fprintf(stderr, "DEBUG: Error in cometa_init: %d. Exiting.\r\n", ret);
