@@ -307,7 +307,7 @@ send_heartbeat(void *h) {
 	handle = (struct cometa *)h;
 	usleep(handle->hz * 1000000);
 	do {
-		if ((ret = pthread_rwlock_rdlock(&handle->hlock)) != 0) {
+		if ((ret = pthread_rwlock_wrlock(&handle->hlock)) != 0) {
 	        fprintf(stderr, "ERROR: in send_heartbeat. Failed to get wrlock. ret = %d. Exiting.\r\n", ret);
 	        exit (-1);
 	    }
@@ -443,7 +443,7 @@ recv_loop(void *h) {
         debug_print("DEBUG: received from server:\r\n%s\n", handle->recvBuff);
 
 		/* invoke the user callback */
-        if (pthread_rwlock_rdlock(&(handle->hlock)) != 0) {
+        if (pthread_rwlock_wrlock(&(handle->hlock)) != 0) {
             fprintf(stderr, "ERROR: in message receive loop. Failed to get wrlock. Exiting.\r\n");
             exit (-1);
         } 
@@ -1145,7 +1145,7 @@ cometa_reply cometa_send(struct cometa *handle, const char *buf, const int size)
         /* message too large */
         return COMETAR_PAR_ERROR;
     }
-    if ((ret = pthread_rwlock_rdlock(&handle->hlock)) != 0) {
+    if ((ret = pthread_rwlock_wrlock(&handle->hlock)) != 0) {
         fprintf(stderr, "ERROR: in send_heartbeat. Failed to get wrlock. ret = %d. Exiting.\r\n", ret);
         exit (-1);
     }
