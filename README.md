@@ -143,8 +143,8 @@ A response to a API request is a hash containing at least the response code. If 
     
     GET /subscribe?<app_name>&<app_key>&<device_id>[&<platform]
     
-Headers: 
-    Cometa-Authentication: [YES | NO]
+    Headers: 
+        Cometa-Authentication: [YES | NO]
     
 Parameters:
 
@@ -190,7 +190,7 @@ The following diagrams illustrates the device two-way authentication process:
 
 ###Publish
 
-	POST /publish?<device_id>&<app_name>&<app_key>&<auth_signature>
+	POST /publish?<device_id>&<app_name>&<app_key>&<auth_timestamp>&<body_MD5>&<auth_signature>
 
 Send a message to the `<device\_id>` subscribed to `<app\_name>`.
 
@@ -199,6 +199,8 @@ Parameters:
 * device\_id - the unique device ID (max 32 characters)
 * app\_name - the application name registered with Cometa
 * app\_key - the application key
+* auth_timestamp - timestamp of the request in Epoch
+* body_MD5 - MD5 digest of the message
 * auth\_signature - the authorization signature
 
 The POST body contains the message. The message can be any type, including binary, providing that is not larger than 64 KB.
@@ -230,13 +232,18 @@ The following gist illustrates the Ruby code to generate a Publish signature:
     => "2367f4aedaf70fd64dd1"
     >> device_id="1001-01"
     => "1001-01"
-    >> cmd = "/publish?device_id=" + device_id + "app_name=" + app_name + "app_key=" + app_key
-    => "/publish?device_id=1001-01app_name=starapp_key=a54fca5262b26e58b66e"
+    => auth_timestamp = Time.now.to_i.to_s
+    => "1391532237"
+    => body_MD5 = Digest::MD5.hexdigest(msg)
+    => "3dcd0cd40a25df15c50812c18ddb3398"
+    >> cmd = "/publish?device_id=" + device_id + "&app_name=" + app_name + "&app_key=" + app_key + "&auth_timestamp=" + auth_timestamp + "&body_MD5=" + body_MD5
+    => "/publish?device_id=1001-01&app_name=star&app_key=a54fca5262b26e58b66e&auth_timestamp=1391532237&body_MD5=3dcd0cd40a25df15c50812c18ddb3398"                                        │···················
     >> auth_signature = OpenSSL::HMAC.hexdigest('sha256', app_secret, cmd)
-    => "0ea25fd7d3d6e37fcffebc193f307d8e0bc282fec9f6ebdc3ff29fcd6f4a9ec9"
-    >> cmd += "&auth_signature=" + auth_signature
-    => "/publish?device_id=1001-01app_name=starapp_key=a54fca5262b26e58b66e&auth_signature=0ea25fd7d3d6e37fcffebc193f307d8e0bc282fec9f6ebdc3ff29fcd6f4a9ec9"
-
+    => "30c1fc938510b1092a120b494e8e50b9137dc8256ecb535cf09895f51df0cbdf"                                                                                                                 │···················
+    => cmd += "&auth_signature=" + auth_signature
+    => "/publish?device_id=1001-01&app_name=star&app_key=a54fca5262b26e58b66e&auth_timestamp=1391532237&body_MD5=3dcd0cd40a25df15c50812c18ddb3398&auth_signature=30c1fc938510b1092a120b494│···················
+e8e50b9137dc8256ecb535cf09895f51df0cbdf    
+     => "/publish?device_id=1001-01app_name=starapp_key=a54fca5262b26e58b66eauth_timestamp=1391532237body_MD5=3dcd0cd40a25df15c50812c18ddb3398&auth_signature=40d3249144cbfba87cd63c1d51cafe3ce2c8ebfb01a863848dae23f01a97ee68
 
 ###Info
 
