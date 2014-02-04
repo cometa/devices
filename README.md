@@ -237,13 +237,12 @@ The following gist illustrates the Ruby code to generate a Publish signature:
     => body_MD5 = Digest::MD5.hexdigest(msg)
     => "3dcd0cd40a25df15c50812c18ddb3398"
     >> cmd = "/publish?device_id=" + device_id + "&app_name=" + app_name + "&app_key=" + app_key + "&auth_timestamp=" + auth_timestamp + "&body_MD5=" + body_MD5
-    => "/publish?device_id=1001-01&app_name=star&app_key=a54fca5262b26e58b66e&auth_timestamp=1391532237&body_MD5=3dcd0cd40a25df15c50812c18ddb3398"                                        │···················
+    => "/publish?device_id=1001-01&app_name=star&app_key=a54fca5262b26e58b66e&auth_timestamp=1391532237&body_MD5=3dcd0cd40a25df15c50812c18ddb3398"
     >> auth_signature = OpenSSL::HMAC.hexdigest('sha256', app_secret, cmd)
-    => "30c1fc938510b1092a120b494e8e50b9137dc8256ecb535cf09895f51df0cbdf"                                                                                                                 │···················
+    => "30c1fc938510b1092a120b494e8e50b9137dc8256ecb535cf09895f51df0cbdf"    
     => cmd += "&auth_signature=" + auth_signature
-    => "/publish?device_id=1001-01&app_name=star&app_key=a54fca5262b26e58b66e&auth_timestamp=1391532237&body_MD5=3dcd0cd40a25df15c50812c18ddb3398&auth_signature=30c1fc938510b1092a120b494│···················
-e8e50b9137dc8256ecb535cf09895f51df0cbdf    
-     => "/publish?device_id=1001-01app_name=starapp_key=a54fca5262b26e58b66eauth_timestamp=1391532237body_MD5=3dcd0cd40a25df15c50812c18ddb3398&auth_signature=40d3249144cbfba87cd63c1d51cafe3ce2c8ebfb01a863848dae23f01a97ee68
+    => "/publish?device_id=1001-01&app_name=star&app_key=a54fca5262b26e58b66e&auth_timestamp=1391532237&body_MD5=3dcd0cd40a25df15c50812c18ddb3398&auth_signature=30c1fc938510b1092a120b494e8e50b9137dc8256ecb535cf09895f51df0cbdf    
+    => "/publish?device_id=1001-01app_name=starapp_key=a54fca5262b26e58b66eauth_timestamp=1391532237body_MD5=3dcd0cd40a25df15c50812c18ddb3398&auth_signature=40d3249144cbfba87cd63c1d51cafe3ce2c8ebfb01a863848dae23f01a97ee68
 
 ###Info
 
