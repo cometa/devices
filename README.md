@@ -192,7 +192,7 @@ The following diagrams illustrates the device two-way authentication process:
 
 	POST /publish?<device_id>&<app_name>&<app_key>&<auth_timestamp>&<body_MD5>&<auth_signature>
 
-Send a message to the `<device\_id>` subscribed to `<app\_name>`.
+Send a message to the `<device_id>` subscribed to `<app_name>`.
 
 Parameters:
 
@@ -262,14 +262,4 @@ Successful response:
 	{
 	    "status": "200", 
 	    "device": "40:6c:8f:08:7d:5c", 
-	    "ip_address": "54.241.16.45", 
-	    "heartbeat": "1367769699", 
-	    "info": "linux_client", 
-	    "stats": {
-	        "connected_at": "1367596124", 
-	        "messages": "4007", 
-	        "bytes_up": "5003423", 
-	        "bytes_down": "20023", 
-	        "latency": "32"
-	    }
-	}
+	    "ip_address": "54.241.16.45",
