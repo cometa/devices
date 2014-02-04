@@ -262,4 +262,16 @@ Successful response:
 	{
 	    "status": "200", 
 	    "device": "40:6c:8f:08:7d:5c", 
-	    "ip_address": "54.241.16.45",
+	    "ip_address": "54.241.16.25",
+        "heartbeat": "1391533168", 
+        "info": "BCMUSI14", 
+        "stats": {
+            "connected_at": "1391513168", 
+            "messages": "11621", 
+            "bytes_up": "318478", 
+            "bytes_down": "378822", 
+            "latency": "126", 
+            "websockets": "0"
+        }
+    }	    
+
