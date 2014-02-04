@@ -62,9 +62,9 @@
 #define SERVERNAME "ensemble.cometa.io"
 
 #ifdef USE_SSL
-#define SERVERPORT  "17007"
+#define SERVERPORT  "433"
 #else
-#define SERVERPORT  "7007"
+#define SERVERPORT  "80"
 #endif
 
 // used to verify the certificate -- TODO: the certificate should accept *.cometa.io
